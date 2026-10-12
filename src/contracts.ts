@@ -44,6 +44,7 @@ export interface EndpointProfile {
   kind: "local" | "open-weight-hosted" | "frontier";
   url: string;
   api_key_env?: string;
+  api_key_file?: string;
 }
 export interface ModelProfile {
   id: string;
@@ -68,6 +69,24 @@ export interface SpillwayConfig {
   profiles: ModelProfile[];
   default_profile: string;
   allow_checks_only: boolean;
+  policy?: PolicyConfig;
+  review_profile?: string;
+}
+export interface ClassPolicy {
+  local_eligible: boolean;
+  review: ReviewTier;
+}
+export interface PolicyConfig {
+  version: 1;
+  classes: Record<TaskClass, ClassPolicy>;
+  max_repairs: 0 | 1;
+  review_timeout_minutes: number;
+}
+export type NextAction = "worker" | "repair" | "review" | "frontier-worker";
+export interface FrontierState {
+  available: boolean;
+  resetAt: string | null;
+  updatedAt: string;
 }
 export interface TaskRecord {
   id: string;
@@ -79,6 +98,7 @@ export interface TaskRecord {
   reason: string | null;
   createdAt: string;
   updatedAt: string;
+  nextAction?: NextAction | null;
 }
 export interface Usage {
   inputTokens?: number;
@@ -129,6 +149,8 @@ export interface AttemptRecord {
   resultSha: string | null;
   verification: VerificationResult | null;
   reportPath: string | null;
+  kind?: "worker" | "repair" | "frontier";
+  parentAttemptId?: number | null;
 }
 export interface NewAttempt {
   taskId: string;
@@ -142,6 +164,8 @@ export interface NewAttempt {
   branch: string;
   worktree: string;
   logPath: string;
+  kind?: "worker" | "repair" | "frontier";
+  parentAttemptId?: number;
 }
 export type AttemptPatch = Partial<
   Pick<
@@ -172,6 +196,7 @@ export interface HarnessInput {
   timeoutSec: number;
   logPath: string;
   signal?: AbortSignal;
+  purpose?: "worker" | "review";
 }
 export interface HarnessResult {
   exit: "completed" | "failed" | "timeout" | "transport_error";
@@ -221,6 +246,7 @@ export interface WorkspaceContract {
     branch: string,
   ): Promise<WorktreeInspection>;
   createVerification(commit: string, attemptId: number): Promise<string>;
+  createReviewVerification(commit: string, reviewId: number): Promise<string>;
   removeVerification(path: string): Promise<void>;
   isAncestor(older: string, newer: string): Promise<boolean>;
   diff(base: string, result: string): Promise<string>;
@@ -236,6 +262,70 @@ export interface TaskDetail {
   task: TaskRecord;
   attempts: AttemptRecord[];
   events: EventRecord[];
+  reviews?: ReviewRecord[];
+}
+export interface ReviewFinding {
+  severity: "blocking" | "warning";
+  message: string;
+  path?: string;
+}
+export interface ReviewReport {
+  resultSha: string;
+  verdict: "accept" | "needs-repair" | "reject";
+  findings: ReviewFinding[];
+}
+export interface ReviewRecord {
+  id: number;
+  taskId: string;
+  attemptId: number;
+  tier: "local" | "frontier";
+  source: "service-local" | "owner-session";
+  profileId: string | null;
+  model: string | null;
+  resultSha: string;
+  outcome: "running" | "completed" | "failed" | "uncertain";
+  report: ReviewReport | null;
+  usage: Usage | null;
+  logPath: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  reason: string | null;
+}
+export interface NewReview {
+  taskId: string;
+  attemptId: number;
+  tier: "local" | "frontier";
+  source: "service-local" | "owner-session";
+  profileId?: string;
+  model?: string;
+  resultSha: string;
+  logPath?: string;
+}
+export interface ReviewPatch {
+  outcome?: "completed" | "failed" | "uncertain";
+  report?: ReviewReport | null;
+  usage?: Usage | null;
+  endedAt?: string;
+  reason?: string | null;
+}
+export interface LocalReviewInput {
+  reviewId: number;
+  task: TaskRecord;
+  attempt: AttemptRecord;
+  workspace: WorkspaceContract;
+  adapter: HarnessAdapter;
+  endpoint: EndpointProfile;
+  profile: ModelProfile;
+  artifactDir: string;
+  timeoutSec: number;
+  signal?: AbortSignal;
+}
+export interface LocalReviewResult {
+  outcome: "completed" | "failed" | "uncertain";
+  report?: ReviewReport;
+  usage?: Usage;
+  reason?: string;
+  logPath: string;
 }
 export interface ServiceDescriptor {
   protocol: number;

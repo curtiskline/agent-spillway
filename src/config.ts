@@ -6,6 +6,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { identifier, taskClass, parseYaml } from "./task.js";
+import { policySchema, getPolicy } from "./policy.js";
+import { validateCredentialFile } from "./credentials.js";
 import { SpillwayError, type SpillwayConfig } from "./contracts.js";
 
 const execute = promisify(execFile);
@@ -35,12 +37,13 @@ const schema = z
             id: identifier,
             kind: z.enum(["local", "open-weight-hosted", "frontier"]),
             url: nonempty,
+            api_key_file: nonempty.optional(),
             api_key_env: z
               .string()
               .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
               .optional(),
           })
-          .strict(),
+          .strict().refine(endpoint => !(endpoint.api_key_env && endpoint.api_key_file), 'Choose only one credential reference'),
       )
       .min(1),
     profiles: z
@@ -60,6 +63,8 @@ const schema = z
       .min(1),
     default_profile: identifier,
     allow_checks_only: z.boolean().default(false),
+    policy: policySchema.optional(),
+    review_profile: identifier.optional(),
   })
   .strict();
 
@@ -187,6 +192,13 @@ export async function validateConfig(
   }
   if (!config.profiles.some((profile) => profile.id === config.default_profile))
     throw new SpillwayError("invalid_config", "Default profile is unknown");
+  if (config.review_profile) {
+    const profile = config.profiles.find(item => item.id === config.review_profile);
+    if (!profile) throw new SpillwayError('invalid_config', 'Review profile is unknown');
+    if (config.endpoints.find(endpoint => endpoint.id === profile.endpoint)?.kind === 'frontier') {
+      throw new SpillwayError('invalid_config', 'Review profile must use a local or open-weight endpoint');
+    }
+  }
   const repositories = [];
   for (const repo of config.repositories) {
     let path: string;
@@ -212,6 +224,12 @@ export async function validateConfig(
       "invalid_config",
       "Registered repositories must be unique",
     );
+  for (const endpoint of config.endpoints) {
+    if (endpoint.api_key_file) {
+      endpoint.api_key_file = await validateCredentialFile(expand(endpoint.api_key_file));
+      await ensureOutsideRepositories(endpoint.api_key_file,repositories.map(repo => repo.path));
+    }
+  }
   const data_dir = await canonicalFuture(
     expand(
       overrides.dataDir ?? config.data_dir ?? join(homedir(), ".spillway"),
@@ -223,7 +241,7 @@ export async function validateConfig(
   );
   await mkdir(data_dir, { recursive: true, mode: 0o700 });
   await chmod(data_dir, 0o700);
-  return { ...config, repositories, data_dir };
+  return { ...config, policy: getPolicy(config.policy), repositories, data_dir };
 }
 
 export async function loadConfig(

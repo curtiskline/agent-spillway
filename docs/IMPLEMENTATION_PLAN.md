@@ -1,6 +1,6 @@
 # Implementation plan and durable state
 
-Updated: 2026-10-12. Scope: Phase 0/1, per design §14. Owner initially permitted fixture tests, then supplied a local LM Studio endpoint. Real toy spikes now pass; broader qualification stays pending. Never mark Phase 0 real endpoint gate complete from a fake harness.
+Updated: 2026-10-12. Scope: Phase 0/1 merged; Phase 2 implemented and locally verified. Owner initially permitted fixture tests, then supplied a local LM Studio endpoint. Real toy spikes now pass; broader qualification stays pending. Never mark Phase 0 real endpoint gate complete from a fake harness.
 
 ## Tasks and ownership
 
@@ -18,17 +18,17 @@ Updated: 2026-10-12. Scope: Phase 0/1, per design §14. Owner initially permitte
 
 A1/A2/A3 run concurrently with disjoint ownership. Architectural contracts are centrally fixed first. A4 integration continuously checks interfaces; no task marked complete solely because files exist. Agents report implemented functionality, tests, assumptions and unresolved issues concisely. No agent commits or edits files outside assigned ownership without orchestration.
 
-## Later phases (not this delivery)
+## Later phases
 
-Phase 2: real plugin workflow, launchd/systemd install, versioned class policy, local/frontier reviews, bounded repair/escalation, frontier toggle. Phase 3: JSONL outbox, report/scorecard, sampled audits, sanitized public-only export, qualification suite/community profiles, tested marketplace onboarding, first real accepted report and 0.1.0. Phase 4: measured new hardware qualification/capacity. Phase 5: limit automation, schedules, fallback planner, stacked tasks, extra adapters. Each requires its own tasks and acceptance gates before delegation.
+Phase 2 is the current implementation wave below. Phase 3: JSONL outbox, report/scorecard, sampled audits, sanitized public-only export, qualification suite/community profiles, tested marketplace onboarding, first real accepted report and 0.1.0. Phase 4: measured new hardware qualification/capacity. Phase 5: limit automation, schedules, fallback planner, stacked tasks, extra adapters. Each requires its own tasks and acceptance gates before delegation.
 
 ## Verification ledger
 
-Architecture/spec review complete. Repository origin verified public; initial README commit preserved. No broad model qualification, production infrastructure calls, frontier inference or release claims made; local endpoint toy tasks were executed with owner authorization. Local verification: `npm run check` passes (110 tests across 15 files, strict typecheck, lint, build); `npm audit --audit-level=moderate` reports zero vulnerabilities; npm package dry-run inspected; built CLI smoke passes. Plugin and marketplace validated by the installed Claude CLI without provider calls. GitHub secret scanning, push protection and private vulnerability reporting are enabled; required gitleaks pre-commit hook installed. Staged and full-history gitleaks scans passed. Draft PR #1 is published on bootstrap. Initial GitHub push/PR CI passed all Node 22/24 Linux and Node 24 macOS jobs and secret scanning. The real spike exposed context-length misclassification; a regression now records it as coding failure and retains reported usage. Final suite: 113 tests; PR #1 exposes current-head CI status. The preceding local full suite passed 112 tests, then the independent review added one explicit content-filter regression.
+Architecture/spec review complete. Repository origin verified public; initial README commit preserved. No broad model qualification, production infrastructure calls, frontier inference or release claims made; local endpoint toy tasks were executed with owner authorization. Local verification: `npm run check` passes (110 tests across 15 files, strict typecheck, lint, build); `npm audit --audit-level=moderate` reports zero vulnerabilities; npm package dry-run inspected; built CLI smoke passes. Plugin and marketplace validated by the installed Claude CLI without provider calls. GitHub secret scanning, push protection and private vulnerability reporting are enabled; required gitleaks pre-commit hook installed. Staged and full-history gitleaks scans passed. PR #1 was published on bootstrap and merged after green CI at owner request. Initial GitHub push/PR CI passed all Node 22/24 Linux and Node 24 macOS jobs and secret scanning. The real spike exposed context-length misclassification; a regression now records it as coding failure and retains reported usage. Final suite: 113 tests; PR #1 exposes current-head CI status. The preceding local full suite passed 112 tests, then the independent review added one explicit content-filter regression.
 
 ## Unresolved decisions
 
-Broader model/profile qualification with artifact hash/license; owner selection of public pilot (use purpose-built disposable sample now); optional hosted permission per repo; spending ceiling and audit tuning deferred to Phase 2/3; remote dashboard opt-in deferred. CLA/directory submission remain owner decisions if needed later.
+Broader model/profile qualification with artifact hash/license; owner selection of public pilot (use purpose-built disposable sample now); optional hosted permission per repo; audits and scorecard tuning deferred to Phase 3; automatic paid calls excluded by owner decision; remote dashboard opt-in deferred. CLA/directory submission remain owner decisions if needed later.
 
 ## Contributions and independent verification
 
@@ -42,4 +42,21 @@ Observed failures were fixed before completion: duplicate prompt artifact owners
 
 ## Real endpoint checkpoint
 
-See docs/spikes/real-harness.md. OpenCode 1.19.0 produced a ready verified result through the actual CLI/service; Aider 0.86.2 also passed the same clean-checkout verifier after disabling auto-.gitignore. Four observed runs include both initial failures, not just successes. Private address/config/transcripts remain outside this repository. Owner acceptance and merges remain pending. Scope has not expanded into Phase 2/3.
+See docs/spikes/real-harness.md. OpenCode 1.19.0 produced a ready verified result through the actual CLI/service; Aider 0.86.2 also passed the same clean-checkout verifier after disabling auto-.gitignore. Four observed runs include both initial failures, not just successes. Private address/config/transcripts remain outside this repository. Owner acceptance and merges remain pending. This checkpoint was Phase 1; Phase 2 was subsequently authorized below.
+
+## Phase 2 active — 2026-10-12
+
+PR #1 merged to main (1ab2878) at owner request. Owner authorized continuing and selected Claude Code sessions for frontier work; no automatic paid calls. Branch phase-2-review-and-service. P20 architecture/contracts complete; P21 policy/store, P22 read-only review/continuation, and P23 clients/plugin/service implementations and focused tests are complete. P24 controller/API integration and actual macOS background-service/local-model verification are complete. P25 independent review findings are fixed with regressions; full local checks pass. Public Phase 2 PR/CI publication is current. Exact contracts, responsibilities and acceptance gates are in docs/PHASE2.md. Paid automation and Phase 3–5 are not implemented by this wave.
+
+
+Phase 2 integration checkpoint: local review, bounded cumulative repair, owner-session frontier claims/reviews, availability/reset state and private service/credential references are implemented. Independent review fixes cover repair transport lineage, availability/data-policy races, ambiguous JSON, missing-report validation, clean-environment home resolution, Linux service restart, frontier dependency ancestry actual changed-path sensitivity, and final-round harness completion evidence. A full integration run passed 236 tests and exposed one same-timestamp ordering failure; stable admission order fixed it, with 56 targeted tests passing. Actual SIGKILL tests now cover surviving reviewer processes as well as workers. No frontier provider calls occurred. Previous private daemon was stopped while idle and config/database backed up before migration. Later gates: actual Linux host lifecycle, live Claude session/marketplace onboarding, artifact/license qualification, scorecards/audits and release.
+
+
+## Phase 2 verified checkpoint
+
+- P20–P25 implementation and local verification complete; four agents contributed policy/store, execution/review, clients/service/plugin, and independent security/data-integrity review. Orchestrator owns shared contracts, controller/API, integration, fixes and publication.
+- Final `npm run check`: 266 tests across 22 files, typecheck, lint and build PASS. `npm audit --audit-level=moderate`: zero vulnerabilities. Staged gitleaks PASS; package dry-run contains no private config, queue, logs or secrets. Plugin/marketplace and fixture launchd plist validations PASS.
+- Actual macOS launchd install/status/stop/start PASS from a private installed package; pinned executable/config, clean environment, private logs and queue survive restart. Background service remains running. Actual Linux host lifecycle remains an external gate; fixture escaping/lifecycle and CI are validated independently.
+- Real local Phase 2 sample: worker commit + clean independent check + separate read-only model review `accept` -> ready. Exact SHA pins match; only source changed, protected check preserved, main unchanged, reviewer checkout removed. Reviewer observed tools: glob/read only. Frontier stayed off; no paid/frontier calls. Sample remains owner-unaccepted. Sanitized observation: docs/spikes/phase2-local-review.md.
+- Earlier same-millisecond ordering failure was fixed with durable admission order and frozen-time restart regression. Unknown worker/reviewer execution globally fences inference until explicit owner reconciliation. Actual SIGKILL recovery tests cover both kinds.
+- Remaining work: Phase 3 evidence outbox/scorecards/audits/public-only exports, broader artifact/license/profile qualification, live owner Claude-session/marketplace onboarding, actual Linux host validation and release. None is claimed complete by toy samples.

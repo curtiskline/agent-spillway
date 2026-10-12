@@ -95,6 +95,73 @@ describe("real Git workspace lifecycle", () => {
       workspace.preserveTransportWorker(repo, "retry", 1),
     ).rejects.toThrow("unmanaged");
   });
+  it("archives repair lineage without discarding a dirty worker or original commits", async () => {
+    const worker = await workspace.createWorker("repair", base, 1);
+    await writeFile(join(worker, "hello.txt"), "committed first result");
+    await git(worker, "add", ".");
+    await git(worker, "commit", "-m", "first result");
+    const resultSha = await git(worker, "rev-parse", "HEAD");
+    await writeFile(
+      join(worker, "evidence.txt"),
+      "uncommitted preserved evidence",
+    );
+    expect(await workspace.archiveWorker(worker, "repair", 1)).toBe(
+      "spillway/repair-attempt-1",
+    );
+    expect(await git(worker, "rev-parse", "--abbrev-ref", "HEAD")).toBe(
+      "spillway/repair-attempt-1",
+    );
+    expect(await readFile(join(worker, "evidence.txt"), "utf8")).toContain(
+      "preserved",
+    );
+    const repair = await workspace.createWorker("repair", resultSha, 2);
+    expect(await readFile(join(repair, "hello.txt"), "utf8")).toBe(
+      "committed first result",
+    );
+    expect(await workspace.isAncestor(base, resultSha)).toBe(true);
+    await expect(workspace.archiveWorker(worker, "repair", 1)).rejects.toThrow(
+      "expected",
+    );
+    await expect(workspace.archiveWorker(repo, "repair", 1)).rejects.toThrow(
+      "unmanaged",
+    );
+  });
+  it("isolates review IDs from attempt verification IDs and refuses collisions", async () => {
+    const verification = await workspace.createVerification(base, 1);
+    const review = await workspace.createReviewVerification(base, 1);
+    expect(verification).toContain("verification-1");
+    expect(review).toContain("review-1");
+    expect(await git(review, "rev-parse", "--abbrev-ref", "HEAD")).toBe("HEAD");
+    await expect(workspace.createReviewVerification(base, 1)).rejects.toThrow(
+      "Git operation failed",
+    );
+    await expect(workspace.createReviewVerification(base, -1)).rejects.toThrow(
+      "Invalid review",
+    );
+    await workspace.removeVerification(review);
+    await workspace.removeVerification(verification);
+  });
+  it("refuses archive renames when a worker Git pointer identifies a foreign repository", async () => {
+    const worker = await workspace.createWorker("pointer", base, 1);
+    const foreign = join(root, "foreign");
+    await mkdir(foreign);
+    await git(foreign, "init", "-b", "spillway/pointer");
+    await git(foreign, "config", "user.name", "Fixture");
+    await git(foreign, "config", "user.email", "fixture@example.invalid");
+    await writeFile(join(foreign, "hello.txt"), "foreign");
+    await git(foreign, "add", ".");
+    await git(foreign, "commit", "-m", "foreign");
+    await writeFile(join(worker, ".git"), `gitdir: ${join(foreign, ".git")}\n`);
+    await expect(workspace.archiveWorker(worker, "pointer", 1)).rejects.toThrow(
+      "Git metadata",
+    );
+    await expect(
+      workspace.preserveTransportWorker(worker, "pointer", 1),
+    ).rejects.toThrow("Git metadata");
+    expect(await git(foreign, "rev-parse", "--abbrev-ref", "HEAD")).toBe(
+      "spillway/pointer",
+    );
+  });
   it("rejects option injection, identities and repository-contained state", async () => {
     await expect(workspace.resolveBase("--help")).rejects.toThrow("Invalid");
     await expect(workspace.createWorker("../escape", base, 1)).rejects.toThrow(

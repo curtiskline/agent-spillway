@@ -1,6 +1,6 @@
 # Working on Agent Spillway
 
-Read docs/design.md, docs/ARCHITECTURE.md and docs/INTERFACES.md before changes. Initial scope is Phase 0/1. Architecture changes go through the orchestrator and are recorded in docs/DECISIONS.md and short docs/decisions ADRs. Update docs/IMPLEMENTATION_PLAN.md with durable status and verification.
+Read docs/design.md, docs/ARCHITECTURE.md, docs/INTERFACES.md and docs/PHASE2.md before changes. The owner authorized Phase 2 after merging PR #1; frontier work uses Claude Code sessions only, with no automatic paid calls. Phase 2 contracts are consolidated in the main architecture/interfaces; docs/PHASE2.md preserves the implementation handoff. Architecture changes go through the orchestrator and are recorded in docs/DECISIONS.md and short docs/decisions ADRs. Update docs/IMPLEMENTATION_PLAN.md with durable status and verification.
 
 TypeScript ESM, explicit .js import suffixes, strict types, no `any` at boundaries. Node >=22.13. Keep dependencies small. Commands: npm ci; npm run build; npm run typecheck; npm run lint; npm test. Tests use temporary directories outside the checkout, real Git fixture repositories, mock catalogs and a fixture subprocess harness. No real provider credentials in CI or capability claims from fixtures.
 

@@ -59,7 +59,14 @@ describe("production MCP over real stdio and authenticated HTTP", () => {
         JSON.stringify({
           data: request.url?.endsWith("/result")
             ? null
-            : { reached: request.url },
+            : request.url === "/api/v1/tasks/task-one"
+              ? {
+                  task: { id: "task-one" },
+                  reviews: [
+                    { source: "owner-session", resultSha: "a".repeat(40) },
+                  ],
+                }
+              : { reached: request.url },
         }),
       );
     });
@@ -128,6 +135,14 @@ describe("production MCP over real stdio and authenticated HTTP", () => {
       path: "/api/v1/tasks/task-one/result",
       body: null,
     });
+  });
+  it("preserves additive review records in the existing get_task tool", async () => {
+    const result = await client.callTool({
+      name: "get_task",
+      arguments: { id: "task-one" },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.stringify(result.content)).toContain("owner-session");
   });
   it("rejects invalid IDs and unexpected arguments before touching HTTP", async () => {
     const count = requests.length;

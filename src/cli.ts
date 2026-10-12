@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,6 +9,7 @@ import { loadConfig, defaultConfigPath } from "./config.js";
 import { SpillwayError, VERSION } from "./contracts.js";
 import { serveMcp } from "./mcp.js";
 import { lintTask } from "./task.js";
+import { parseReviewReport } from "./review.js";
 
 interface CliOptions {
   config?: string;
@@ -21,7 +22,7 @@ interface Output {
   err(text: string): void;
 }
 const usage =
-  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary";
+  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall";
 function parseArgs(argv: string[]): CliOptions {
   const positional: string[] = [];
   const options: { config?: string; dataDir?: string } = {};
@@ -103,6 +104,38 @@ export async function runCli(
       );
       return 0;
     }
+    if (command === "service") {
+      if (options.dataDir)
+        throw new SpillwayError(
+          "usage",
+          "Configure data_dir in the private config before service installation; service actions do not accept --data-dir.",
+        );
+      const { installService, manageService } = await import(
+        "./service-manager.js"
+      );
+      let result: unknown;
+      if (args[0] === "install") {
+        if (args.length > 2 || (args.length === 2 && args[1] !== "--no-start"))
+          throw new SpillwayError("usage", "Use service install [--no-start].");
+        result = await installService({
+          configPath: options.config,
+          start: args[1] !== "--no-start",
+        });
+      } else if (
+        args.length === 1 &&
+        ["start", "stop", "status", "uninstall"].includes(args[0]!)
+      ) {
+        result = await manageService(
+          args[0] as "start" | "stop" | "status" | "uninstall",
+        );
+      } else
+        throw new SpillwayError(
+          "usage",
+          "Use service install|start|stop|status|uninstall.",
+        );
+      output.out(JSON.stringify(result, null, 2));
+      return 0;
+    }
     if (command === "serve") {
       requireArgs(args, 0);
       const config = await loadConfig(options.config, {
@@ -125,6 +158,98 @@ export async function runCli(
     const client = await clientFor(options);
     let result: unknown;
     switch (command) {
+      case "frontier": {
+        const action = args[0];
+        if (action === "status") {
+          requireArgs(args, 1);
+          result = await client.request("GET", "/api/v1/frontier");
+        } else if (action === "on" || action === "off") {
+          if (
+            args.length !== 1 &&
+            (args.length !== 3 || args[1] !== "--reset-at")
+          )
+            throw new SpillwayError(
+              "usage",
+              "Use frontier on|off [--reset-at ISO].",
+            );
+          const resetAt = args[2];
+          if (
+            resetAt &&
+            (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(
+              resetAt,
+            ) ||
+              !Number.isFinite(Date.parse(resetAt)))
+          )
+            throw new SpillwayError(
+              "usage",
+              "Reset time must be an ISO timestamp with an explicit offset.",
+            );
+          result = await client.request("POST", "/api/v1/frontier", {
+            available: action === "on",
+            ...(resetAt ? { resetAt } : {}),
+          });
+        } else if (action === "claim") {
+          requireArgs(args, 2);
+          result = await client.request(
+            "POST",
+            `/api/v1/tasks/${taskId(args[1]!)}/frontier-claim`,
+          );
+        } else if (action === "complete") {
+          requireArgs(args, 4);
+          if (
+            args[2] !== "--attempt" ||
+            !/^[1-9]\d*$/.test(args[3]!) ||
+            !Number.isSafeInteger(Number(args[3]))
+          )
+            throw new SpillwayError(
+              "usage",
+              "Use frontier complete ID --attempt N with a positive attempt ID.",
+            );
+          result = await client.request(
+            "POST",
+            `/api/v1/tasks/${taskId(args[1]!)}/frontier-complete`,
+            { attemptId: Number(args[3]) },
+          );
+        } else
+          throw new SpillwayError(
+            "usage",
+            "Use frontier on|off|status|claim|complete.",
+          );
+        break;
+      }
+      case "review": {
+        if (args[0] === "show") {
+          requireArgs(args, 2);
+          result = await client.request(
+            "GET",
+            `/api/v1/tasks/${taskId(args[1]!)}/review`,
+          );
+        } else if (args[0] === "submit") {
+          requireArgs(args, 4);
+          if (args[2] !== "--file")
+            throw new SpillwayError(
+              "usage",
+              "Use review submit ID --file PATH.",
+            );
+          const file = resolve(args[3]!);
+          if ((await stat(file)).size > 256 * 1024)
+            throw new SpillwayError(
+              "usage",
+              "Review report must be under 256 KiB.",
+            );
+          const report = parseReviewReport(await readFile(file, "utf8"));
+          result = await client.request(
+            "POST",
+            `/api/v1/tasks/${taskId(args[1]!)}/review`,
+            { report },
+          );
+        } else
+          throw new SpillwayError(
+            "usage",
+            "Use review show ID or review submit ID --file PATH.",
+          );
+        break;
+      }
       case "add":
         requireArgs(args, 1);
         result = await client.request("POST", "/api/v1/tasks", {
@@ -193,6 +318,7 @@ export async function runCli(
             "rejected",
             "accepted",
             "abandoned",
+            "escalated",
           ].includes(task.state),
         );
         output.out(

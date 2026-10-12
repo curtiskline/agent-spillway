@@ -9,7 +9,8 @@ endpoints:
   - id: local
     kind: local
     url: http://127.0.0.1:8080/v1
-    # api_key_env: SPILLWAY_LOCAL_API_KEY
+    # api_key_env: SPILLWAY_LOCAL_API_KEY # Foreground only.
+    # api_key_file: ~/.config/spillway/credentials/local-key # Private file for a daemon.
 profiles:
   - id: sample
     endpoint: local
@@ -22,3 +23,6 @@ default_profile: sample
 allow_checks_only: false # Explicitly enable only for a trusted experimental sample.
 port: 7433
 poll_interval_ms: 5000
+
+# Default policy uses local review for qualified local classes, one repair maximum.
+# Optional review_profile defaults to the task profile.

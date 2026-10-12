@@ -34,11 +34,17 @@
             "maxLength": 4096
           },
           "data_policy": {
-            "enum": ["local-only", "open-weight-hosted-ok", "frontier-ok"],
+            "enum": [
+              "local-only",
+              "open-weight-hosted-ok",
+              "frontier-ok"
+            ],
             "default": "local-only"
           }
         },
-        "required": ["path"]
+        "required": [
+          "path"
+        ]
       },
       "minItems": 1
     },
@@ -53,7 +59,11 @@
             "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
           },
           "kind": {
-            "enum": ["local", "open-weight-hosted", "frontier"]
+            "enum": [
+              "local",
+              "open-weight-hosted",
+              "frontier"
+            ]
           },
           "url": {
             "type": "string",
@@ -64,9 +74,25 @@
           "api_key_env": {
             "type": "string",
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "api_key_file": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Private owner-only 0600 regular credential file outside any Git repository; symlinks rejected."
           }
         },
-        "required": ["id", "kind", "url"]
+        "required": [
+          "id",
+          "kind",
+          "url"
+        ],
+        "not": {
+          "required": [
+            "api_key_env",
+            "api_key_file"
+          ]
+        }
       },
       "minItems": 1
     },
@@ -137,6 +163,167 @@
     "allow_checks_only": {
       "type": "boolean",
       "default": false
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "classes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tests": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "local_eligible": {
+                  "type": "boolean"
+                },
+                "review": {
+                  "enum": [
+                    "checks-only",
+                    "local",
+                    "frontier"
+                  ]
+                }
+              },
+              "required": [
+                "local_eligible",
+                "review"
+              ]
+            },
+            "small-fix": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "local_eligible": {
+                  "type": "boolean"
+                },
+                "review": {
+                  "enum": [
+                    "checks-only",
+                    "local",
+                    "frontier"
+                  ]
+                }
+              },
+              "required": [
+                "local_eligible",
+                "review"
+              ]
+            },
+            "mechanical": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "local_eligible": {
+                  "type": "boolean"
+                },
+                "review": {
+                  "enum": [
+                    "checks-only",
+                    "local",
+                    "frontier"
+                  ]
+                }
+              },
+              "required": [
+                "local_eligible",
+                "review"
+              ]
+            },
+            "small-feature": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "local_eligible": {
+                  "type": "boolean"
+                },
+                "review": {
+                  "enum": [
+                    "checks-only",
+                    "local",
+                    "frontier"
+                  ]
+                }
+              },
+              "required": [
+                "local_eligible",
+                "review"
+              ]
+            },
+            "risky": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "local_eligible": {
+                  "type": "boolean"
+                },
+                "review": {
+                  "const": "frontier"
+                }
+              },
+              "required": [
+                "local_eligible",
+                "review"
+              ]
+            },
+            "design": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "local_eligible": {
+                  "const": false
+                },
+                "review": {
+                  "enum": [
+                    "checks-only",
+                    "local",
+                    "frontier"
+                  ]
+                }
+              },
+              "required": [
+                "local_eligible",
+                "review"
+              ]
+            }
+          },
+          "required": [
+            "tests",
+            "small-fix",
+            "mechanical",
+            "small-feature",
+            "risky",
+            "design"
+          ]
+        },
+        "max_repairs": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "review_timeout_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        }
+      },
+      "required": [
+        "version",
+        "classes",
+        "max_repairs",
+        "review_timeout_minutes"
+      ]
+    },
+    "review_profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+      "description": "Optional configured local or open-weight reviewer profile. Default uses the task profile; repository data policy is enforced separately."
     }
   },
   "required": [

@@ -10,7 +10,7 @@ import {
   symlink,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { GitWorkspace } from "../src/git.js";
 import { verifyAttempt } from "../src/verify.js";
 import type { AttemptRecord, TaskSpec } from "../src/contracts.js";
@@ -218,6 +218,41 @@ describe("independent committed-result verification", () => {
     await commit();
     expect((await verify()).flags).toContain("deleted-tests");
   });
+  it.each([
+    "src/permission.ts",
+    "src/permissions.json",
+    "src/permission/check.ts",
+    "src/permissions/check.ts",
+    "src/secret.ts",
+    "src/secrets.json",
+    "src/secret/provider.ts",
+    "src/secrets/provider.ts",
+    "src/migration.sql",
+    "src/migrations.ts",
+    "src/migration/001.sql",
+    "src/migrations/001.sql",
+    "src/authorization.ts",
+    "src/authorization-policy.ts",
+    "src/authorize.ts",
+    "src/permissionsService.ts",
+    "src/database-secrets.ts",
+    "src/.secret.json",
+    "src/authMiddleware.ts",
+  ])(
+    "forces security review for actual changed path %s under a broad source scope",
+    async (path) => {
+      // All contents are synthetic; wildcard admission cannot authorize this diff.
+      expect(spec.scope).toEqual(["src/**"]);
+      await mkdir(dirname(join(worker, path)), { recursive: true });
+      await writeFile(join(worker, path), "synthetic fixture content only\n");
+      await writeFile(join(worker, "src", "hello.txt"), "after\n");
+      await commit();
+      const result = await verify();
+      expect(result.passed).toBe(true);
+      expect(result.changedPaths).toContain(path);
+      expect(result.flags).toContain("security-sensitive-path");
+    },
+  );
   it("does not use worker-installed or ignored artifacts for checks", async () => {
     await writeFile(join(worker, "src", "hello.txt"), "after\n");
     await commit();

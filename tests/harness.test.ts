@@ -29,11 +29,11 @@ describe("provisional OpenCode plumbing (no model qualification)", () => {
 if(process.argv.includes('--version')){console.log('1.2.3');process.exit(0)}
 let prompt='';for await(const b of process.stdin)prompt+=b;
 fs.writeFileSync(process.env.HOME+'/capture.json',JSON.stringify({args:process.argv.slice(2),prompt,env:process.env,config:JSON.parse(process.env.OPENCODE_CONFIG_CONTENT)}));
-if(prompt==='hang'){setInterval(()=>{},1000)}
+if(prompt==='hang'||prompt==='usage-timeout'){if(prompt==='usage-timeout')console.log(JSON.stringify({type:'step_finish',part:{reason:'tool-calls',tokens:{input:12,output:7},cost:0.01}}));setInterval(()=>{},1000)}
 else if(prompt==='malformed'){console.log('not json')}
 else if(prompt==='transport'){console.log(JSON.stringify({type:'error',error:{name:'APIError',data:{statusCode:503,message:'unavailable'}}}))}
 else if(prompt==='coding'){console.log(JSON.stringify({type:'error',error:{name:'APIError',data:{statusCode:400,message:'invalid request'}}}))}
-else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));console.log(JSON.stringify({type:'step_finish',part:prompt==='missing'?{reason:'stop'}:{reason:prompt==='tool-round'?'tool-calls':'stop',tokens:{input:12,output:7},cost:0.01}}))}
+else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));console.log(JSON.stringify({type:'step_finish',part:prompt==='missing'?{reason:'stop'}:{reason:prompt==='content-filter'?'content-filter':prompt==='length'?'length':prompt==='tool-round'?'tool-calls':'stop',tokens:{input:12,output:7},cost:0.01}}))}
 `,
       { mode: 0o700 },
     );
@@ -122,12 +122,27 @@ else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));conso
     ["coding", "failed"],
     ["hang", "timeout"],
     ["tool-round", "transport_error"],
+    ["length", "failed"],
+    ["content-filter", "failed"],
+    ["usage-timeout", "timeout"],
   ] as const)("classifies %s events", async (prompt, exit) => {
     input.prompt = prompt;
-    input.timeoutSec = prompt === "hang" ? 0.1 : 2;
+    input.timeoutSec =
+      prompt === "usage-timeout" ? 1.5 : prompt === "hang" ? 0.2 : 2;
     const result = await new OpenCodeAdapter(executable).run(input);
     expect(result.exit).toBe(exit);
     if (prompt === "missing") expect(result.usage).toBeUndefined();
+    if (
+      prompt === "length" ||
+      prompt === "content-filter" ||
+      prompt === "tool-round" ||
+      prompt === "usage-timeout"
+    )
+      expect(result.usage).toEqual({
+        inputTokens: 12,
+        outputTokens: 7,
+        costUsd: 0.01,
+      });
   });
   it("fails closed on project plugin/config or credential fallback", async () => {
     await writeFile(

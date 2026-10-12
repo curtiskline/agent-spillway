@@ -188,15 +188,11 @@ export class OpenCodeAdapter implements HarnessAdapter {
       logPath: input.logPath,
       signal: input.signal,
     });
-    if (result.timedOut) return { exit: "timeout" };
-    if (result.stdout.includes(OUTPUT_TRUNCATED))
-      return {
-        exit: "transport_error",
-        summary: "Harness event output exceeded the bounded parser limit",
-      };
+    const truncated = result.stdout.includes(OUTPUT_TRUNCATED);
     let usage: Usage | undefined;
     let summary: string | undefined;
     let finished = false;
+    let finishReason: string | undefined;
     let errorExit: "failed" | "transport_error" | undefined;
     for (const line of result.stdout
       .split("\n")
@@ -206,13 +202,17 @@ export class OpenCodeAdapter implements HarnessAdapter {
         event = object(JSON.parse(line) as unknown);
       } catch {
         return {
-          exit: "transport_error",
-          summary: "Malformed harness event stream",
+          exit: result.timedOut ? "timeout" : "transport_error",
+          usage,
+          summary: truncated
+            ? "Harness event output exceeded the bounded parser limit"
+            : "Malformed harness event stream",
         };
       }
       if (!event || typeof event.type !== "string")
         return {
-          exit: "transport_error",
+          exit: result.timedOut ? "timeout" : "transport_error",
+          usage,
           summary: "Malformed harness event stream",
         };
       const part = object(event.part);
@@ -221,6 +221,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
       if (event.type === "step_finish") {
         // Tool-call rounds also emit step_finish. Require a final stop event.
         finished = part?.reason === "stop";
+        finishReason =
+          typeof part?.reason === "string" ? part.reason : undefined;
         const tokens = object(part?.tokens);
         for (const [field, value] of [
           ["inputTokens", tokens?.input],
@@ -252,11 +254,19 @@ export class OpenCodeAdapter implements HarnessAdapter {
             : "failed";
       }
     }
+    if (result.timedOut) return { exit: "timeout", usage, summary };
     if (errorExit) return { exit: errorExit, usage, summary };
     if (result.exitCode !== 0) return { exit: "failed", usage, summary };
+    if (finishReason === "length" || finishReason === "content-filter")
+      return {
+        exit: "failed",
+        usage,
+        summary: `Harness stopped before completion (${finishReason}).`,
+      };
     if (!finished)
       return {
         exit: "transport_error",
+        usage,
         summary: "Harness did not emit completion evidence",
       };
     return { exit: "completed", usage, summary };

@@ -33,7 +33,7 @@ flowchart LR
 
 TypeScript ESM on Node >=22.13, with built-in `node:sqlite` (experimental on older supported Node versions; tested on Node 22/24 in CI). Synchronous SQLite is appropriate for a single small queue; subprocesses and networking are asynchronous. YAML and Zod validate input; picomatch supplies documented POSIX glob behavior; MCP SDK supplies stdio protocol. Node HTTP and HTML avoid a web framework. Vitest, TypeScript and ESLint provide verification. Pin resolved dependencies in the lockfile. OpenCode is externally installed and version checked, not embedded.
 
-OpenCode is provisional until a real endpoint spike compares two harness candidates. The owner has no endpoint yet and explicitly authorizes fixture testing. Fake harness and mock catalogs prove plumbing only. Never publish qualification claims from them.
+OpenCode is the initial adapter after a real LM Studio toy-task comparison with Aider (docs/spikes/real-harness.md). The first verified queued result is ready on a disposable sample. Broader qualification, exact artifact hash/license and reliable frontier limit signals remain external gates. Fake harness and mock catalogs prove plumbing only. Never publish qualification claims from them.
 
 ## Storage and migrations
 

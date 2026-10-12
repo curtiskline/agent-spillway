@@ -30,6 +30,16 @@ describe("plugin scaffold", () => {
       expect(
         await readFile(`plugins/spillway/skills/${skill}/SKILL.md`, "utf8"),
       ).toContain(`name: ${skill}`);
+    for (const agent of ["reviewer", "frontier-worker"]) {
+      const text = await readFile(
+        `plugins/spillway/agents/${agent}.md`,
+        "utf8",
+      );
+      expect(text).toContain(`name: ${agent}`);
+      expect(text).toContain("owner-session attestation");
+      expect(text).toContain("untrusted");
+      expect(text).toContain("frontier-ok");
+    }
     const hooks = await readFile("plugins/spillway/hooks/hooks.json", "utf8");
     expect(hooks).toContain("SessionStart");
     expect(hooks).toContain("session-start.sh");

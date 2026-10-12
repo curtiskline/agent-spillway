@@ -1,0 +1,158 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "classes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tests": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_eligible": {
+              "type": "boolean"
+            },
+            "review": {
+              "enum": [
+                "checks-only",
+                "local",
+                "frontier"
+              ]
+            }
+          },
+          "required": [
+            "local_eligible",
+            "review"
+          ]
+        },
+        "small-fix": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_eligible": {
+              "type": "boolean"
+            },
+            "review": {
+              "enum": [
+                "checks-only",
+                "local",
+                "frontier"
+              ]
+            }
+          },
+          "required": [
+            "local_eligible",
+            "review"
+          ]
+        },
+        "mechanical": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_eligible": {
+              "type": "boolean"
+            },
+            "review": {
+              "enum": [
+                "checks-only",
+                "local",
+                "frontier"
+              ]
+            }
+          },
+          "required": [
+            "local_eligible",
+            "review"
+          ]
+        },
+        "small-feature": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_eligible": {
+              "type": "boolean"
+            },
+            "review": {
+              "enum": [
+                "checks-only",
+                "local",
+                "frontier"
+              ]
+            }
+          },
+          "required": [
+            "local_eligible",
+            "review"
+          ]
+        },
+        "risky": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_eligible": {
+              "type": "boolean"
+            },
+            "review": {
+              "const": "frontier"
+            }
+          },
+          "required": [
+            "local_eligible",
+            "review"
+          ]
+        },
+        "design": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local_eligible": {
+              "const": false
+            },
+            "review": {
+              "enum": [
+                "checks-only",
+                "local",
+                "frontier"
+              ]
+            }
+          },
+          "required": [
+            "local_eligible",
+            "review"
+          ]
+        }
+      },
+      "required": [
+        "tests",
+        "small-fix",
+        "mechanical",
+        "small-feature",
+        "risky",
+        "design"
+      ]
+    },
+    "max_repairs": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "review_timeout_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    }
+  },
+  "required": [
+    "version",
+    "classes",
+    "max_repairs",
+    "review_timeout_minutes"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Spillway policy v1"
+}

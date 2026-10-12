@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { join, relative } from "node:path";
+import { homedir } from "node:os";
 import { Controller } from "../src/controller.js";
 import { Store } from "../src/store.js";
 import { GitWorkspace, gitCommand } from "../src/git.js";
@@ -85,7 +86,9 @@ describe("controller vertical slice", () => {
       expect(c.getDetail("second").attempts).toHaveLength(0);
       await gitCommand(f.repo, ["merge", "--ff-only", "spillway/first"]);
       expect(await c.runOnce()).toBe("second");
-      expect(c.getDetail("second").task.state).toBe("failed");
+      expect(c.getDetail("second").task.state).toBe("held");
+      expect(c.getDetail("second").task.nextAction).toBe("frontier-worker");
+      expect(c.getDetail("second").attempts.at(-1)?.outcome).toBe("failed");
     } finally {
       store.close();
       await f.cleanup();
@@ -194,4 +197,29 @@ describe("controller vertical slice", () => {
       await f.cleanup();
     }
   }, 20000);
+});
+
+it("expands home-relative task repos under a clean daemon environment", async () => {
+  const f = await fixture();
+  const home = homedir();
+  const sample = await mkdtemp(join(home, ".spillway-home-fixture-"));
+  const repo = join(sample, "repo");
+  const savedHome = process.env.HOME;
+  const store = new Store(f.data);
+  try {
+    await gitCommand(f.repo, ["clone", "--no-hardlinks", f.repo, repo]);
+    f.config.repositories = [{ path: repo, data_policy: "local-only" }];
+    const c = new Controller(f.config, store, f.adapter);
+    delete process.env.HOME;
+    const raw = f
+      .markdown("home-relative")
+      .replace(`repo: ${f.repo}`, `repo: ~/${relative(home, repo)}`);
+    expect((await c.addTask(raw)).spec.repo).toBe(repo);
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    store.close();
+    await f.cleanup();
+    await rm(sample, { recursive: true, force: true });
+  }
 });

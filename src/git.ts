@@ -1,5 +1,5 @@
 import { realpathSync, existsSync } from "node:fs";
-import { mkdir, chmod, lstat } from "node:fs/promises";
+import { mkdir, chmod, lstat, readFile } from "node:fs/promises";
 import { resolve, relative, isAbsolute, dirname, join } from "node:path";
 import {
   SpillwayError,
@@ -186,6 +186,58 @@ export class GitWorkspace implements WorkspaceContract {
     this.verificationPaths.add(path);
     return path;
   }
+  async createReviewVerification(
+    commit: string,
+    reviewId: number,
+  ): Promise<string> {
+    assertSha(commit);
+    if (!Number.isSafeInteger(reviewId) || reviewId < 1)
+      throw new SpillwayError("invalid_worktree", "Invalid review identity");
+    const parent = join(this.dataDir, "worktrees");
+    await privateDirectory(parent);
+    const path = join(parent, `review-${reviewId}`);
+    await gitCommand(this.repo, [
+      "worktree",
+      "add",
+      "--detach",
+      "--",
+      path,
+      commit,
+    ]);
+    await chmod(path, 0o700);
+    this.verificationPaths.add(path);
+    return path;
+  }
+  async archiveWorker(
+    path: string,
+    taskId: string,
+    attemptId: number,
+  ): Promise<string> {
+    if (
+      !/^[a-z0-9][a-z0-9-]{0,63}$/.test(taskId) ||
+      !Number.isSafeInteger(attemptId) ||
+      attemptId < 1 ||
+      path !==
+        join(this.dataDir, "worktrees", `worker-${attemptId}-${taskId}`) ||
+      canonicalPath(path) !== path
+    )
+      throw new SpillwayError(
+        "unsafe_archive",
+        "Refusing to archive an unmanaged worker checkout",
+      );
+    await this.assertWorkerMetadata(path);
+    const branch = (
+      await gitCommand(path, ["rev-parse", "--abbrev-ref", "HEAD"])
+    ).trim();
+    if (branch !== `spillway/${taskId}`)
+      throw new SpillwayError(
+        "unsafe_archive",
+        "Worker is no longer on its expected result branch",
+      );
+    const archived = `spillway/${taskId}-attempt-${attemptId}`;
+    await gitCommand(path, ["branch", "-m", branch, archived]);
+    return archived;
+  }
   async preserveTransportWorker(
     path: string,
     taskId: string,
@@ -204,6 +256,7 @@ export class GitWorkspace implements WorkspaceContract {
         "Refusing to archive an unmanaged worker checkout",
       );
     }
+    await this.assertWorkerMetadata(path);
     const branch = (
       await gitCommand(path, ["rev-parse", "--abbrev-ref", "HEAD"])
     ).trim();
@@ -218,6 +271,54 @@ export class GitWorkspace implements WorkspaceContract {
       `spillway/${taskId}`,
       `spillway/${taskId}-transport-${attemptId}`,
     ]);
+  }
+  private async assertWorkerMetadata(path: string): Promise<void> {
+    try {
+      const pointer = await lstat(join(path, ".git"));
+      if (!pointer.isFile() || pointer.isSymbolicLink() || pointer.size > 16384)
+        throw new Error("Invalid Git pointer");
+      const originalCommon = canonicalPath(
+        (
+          await gitCommand(this.repo, [
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+          ])
+        ).trim(),
+      );
+      const workerCommon = canonicalPath(
+        (
+          await gitCommand(path, [
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+          ])
+        ).trim(),
+      );
+      const workerGitDir = canonicalPath(
+        (await gitCommand(path, ["rev-parse", "--absolute-git-dir"])).trim(),
+      );
+      if (
+        workerCommon !== originalCommon ||
+        !within(workerGitDir, join(originalCommon, "worktrees"))
+      )
+        throw new Error("Foreign Git metadata");
+      const backlink = join(workerGitDir, "gitdir");
+      const info = await lstat(backlink);
+      if (
+        !info.isFile() ||
+        info.isSymbolicLink() ||
+        info.size > 16384 ||
+        canonicalPath((await readFile(backlink, "utf8")).trim()) !==
+          join(path, ".git")
+      )
+        throw new Error("Worktree backlink mismatch");
+    } catch {
+      throw new SpillwayError(
+        "unsafe_archive",
+        "Worker Git metadata no longer identifies its exact registered checkout",
+      );
+    }
   }
   async removeVerification(path: string): Promise<void> {
     if (

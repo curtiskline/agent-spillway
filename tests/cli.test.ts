@@ -163,6 +163,98 @@ describe("spawned CLI against authenticated mock service", () => {
     ])
       expect((await cli(args)).code).toBe(1);
   });
+  it("routes frontier availability, claim, completion and SHA-pinned review reports", async () => {
+    const file = join(dir, "review.json");
+    const report = {
+      resultSha: "a".repeat(40),
+      verdict: "accept",
+      findings: [],
+    };
+    await writeFile(file, JSON.stringify(report));
+    for (const args of [
+      ["frontier", "status"],
+      ["frontier", "off", "--reset-at", "2026-10-13T14:00:00-05:00"],
+      ["frontier", "on"],
+      ["frontier", "claim", "task-one"],
+      ["frontier", "complete", "task-one", "--attempt", "42"],
+      ["review", "show", "task-one"],
+      ["review", "submit", "task-one", "--file", file],
+    ]) {
+      const result = await cli(args);
+      expect(result.code, result.stderr).toBe(0);
+      expect(result.stdout).not.toContain(token);
+    }
+    expect(seen).toContainEqual({
+      method: "POST",
+      url: "/api/v1/frontier",
+      body: { available: false, resetAt: "2026-10-13T14:00:00-05:00" },
+    });
+    expect(seen).toContainEqual({
+      method: "POST",
+      url: "/api/v1/frontier",
+      body: { available: true },
+    });
+    expect(seen).toContainEqual({
+      method: "POST",
+      url: "/api/v1/tasks/task-one/frontier-claim",
+      body: null,
+    });
+    expect(seen).toContainEqual({
+      method: "POST",
+      url: "/api/v1/tasks/task-one/frontier-complete",
+      body: { attemptId: 42 },
+    });
+    expect(seen).toContainEqual({
+      method: "POST",
+      url: "/api/v1/tasks/task-one/review",
+      body: { report },
+    });
+    expect(seen).toContainEqual({
+      method: "GET",
+      url: "/api/v1/tasks/task-one/review",
+      body: null,
+    });
+  });
+  it("rejects malformed frontier/review/service commands without network or daemon mutations", async () => {
+    const count = seen.length;
+    for (const args of [
+      ["frontier", "off", "--reset-at", "tomorrow"],
+      ["frontier", "off", "--reset-at", "2026-10-13T12:00:00"],
+      ["frontier", "claim", "../escape"],
+      ["frontier", "complete", "task-one", "--attempt", "0"],
+      ["frontier", "complete", "task-one", "--attempt", "9007199254740993"],
+      ["review", "submit", "task-one"],
+      ["service", "install", "--no-start"],
+      ["service", "start"],
+    ])
+      expect((await cli(args)).code).toBe(1);
+    const file = join(dir, "malformed-review.json");
+    await writeFile(file, "not JSON");
+    expect(
+      (await cli(["review", "submit", "task-one", "--file", file])).code,
+    ).toBe(1);
+    expect(seen).toHaveLength(count);
+  });
+  it("rejects ambiguous duplicate review keys before posting advice", async () => {
+    const count = seen.length;
+    const file = join(dir, "duplicate-review.json");
+    for (const verdictKey of ["verdict", "ver\\u0064ict"]) {
+      await writeFile(
+        file,
+        `{"resultSha":"${"a".repeat(40)}","verdict":"reject","${verdictKey}":"accept","findings":[]}`,
+      );
+      const result = await cli([
+        "review",
+        "submit",
+        "task-one",
+        "--file",
+        file,
+      ]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("duplicate");
+    }
+    expect(seen).toHaveLength(count);
+  });
   it("handles absent service gracefully for session hook and fails ordinary commands", async () => {
     await rm(join(dir, "service.json"));
     const summary = await cli(["session-summary"]);

@@ -26,6 +26,7 @@ import {
 } from "./contracts.js";
 import { Store } from "./store.js";
 import { Controller } from "./controller.js";
+import { parseStrictJson } from "./json.js";
 
 export interface ServiceHandle {
   url: string;
@@ -47,6 +48,31 @@ const decisionInput = z
   .object({ decision: z.enum(["accepted", "rejected"]) })
   .strict();
 const reconcileInput = z.object({ worker_stopped: z.literal(true) }).strict();
+const frontierInput = z
+  .object({
+    available: z.boolean(),
+    resetAt: z.string().datetime({ offset: true }).nullable().optional(),
+  })
+  .strict();
+const usageInput = z
+  .object({
+    inputTokens: z.number().int().nonnegative().optional(),
+    outputTokens: z.number().int().nonnegative().optional(),
+    costUsd: z.number().nonnegative().optional(),
+  })
+  .strict();
+const reviewInput = z
+  .object({
+    report: z
+      .unknown()
+      .refine((value) => value !== undefined, "Review report is required"),
+    model: z.string().trim().min(1).max(200).optional(),
+    usage: usageInput.optional(),
+  })
+  .strict();
+const completeInput = z
+  .object({ attemptId: z.number().int().positive() })
+  .strict();
 function escapeHtml(value: unknown): string {
   return String(value).replace(
     /[&<>"']/g,
@@ -74,7 +100,7 @@ async function body(req: IncomingMessage): Promise<unknown> {
     chunks.push(buffer);
   }
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+    return parseStrictJson(Buffer.concat(chunks).toString("utf8"));
   } catch {
     throw new SpillwayError("INVALID_JSON", "Invalid JSON.");
   }
@@ -120,7 +146,11 @@ export async function startService(
     });
     return running;
   };
-  const artifact = async (attemptId: number, name: string): Promise<string> => {
+  const artifact = async (
+    attemptId: number,
+    name: string,
+    reviewLog?: string,
+  ): Promise<string> => {
     const attempt = store.getAttempt(attemptId);
     if (!attempt)
       throw new SpillwayError("NOT_FOUND", "Artifact not found.", 404);
@@ -130,7 +160,8 @@ export async function startService(
       attempt.verification?.diffPath,
       ...(attempt.verification?.checks.map((check) => check.logPath) ?? []),
     ].filter((entry): entry is string => !!entry);
-    const selected = paths.find((path) => path.split(/[\\/]/).at(-1) === name);
+    const selected =
+      reviewLog ?? paths.find((path) => path.split(/[\\/]/).at(-1) === name);
     if (!selected)
       throw new SpillwayError("NOT_FOUND", "Artifact not found.", 404);
     const rootPath = join(config.data_dir, "artifacts");
@@ -262,8 +293,13 @@ export async function startService(
       json({
         version: VERSION,
         protocol: PROTOCOL,
-        running: !!running,
+        running:
+          !!running ||
+          Object.keys(counts).some((state) =>
+            ["dispatched", "verifying", "reviewing"].includes(state),
+          ),
         counts,
+        frontier: store.getFrontierState(),
       });
       return;
     }
@@ -284,12 +320,50 @@ export async function startService(
       json({ taskId: await dispatch() });
       return;
     }
+    if (path === "/api/v1/frontier") {
+      if (req.method === "GET") {
+        json(store.getFrontierState());
+        return;
+      }
+      if (req.method === "POST") {
+        const input = frontierInput.parse(await body(req));
+        json(store.setFrontierState(input.available, input.resetAt));
+        return;
+      }
+    }
     const taskPath = path.match(
-      /^\/api\/v1\/tasks\/([^/]+)(?:\/(result|decision|inspect|reconcile))?$/,
+      /^\/api\/v1\/tasks\/([^/]+)(?:\/(result|decision|inspect|reconcile|review|frontier-claim|frontier-complete))?$/,
     );
     if (taskPath) {
       const id = idSchema.parse(taskPath[1]);
       const detail = controller.getDetail(id);
+      if (req.method === "GET" && taskPath[2] === "review") {
+        json(await controller.getReviewPacket(id));
+        return;
+      }
+      if (req.method === "POST" && taskPath[2] === "review") {
+        const input = reviewInput.parse(await body(req));
+        json(
+          await controller.submitFrontierReview(id, input.report, {
+            model: input.model,
+            usage: input.usage,
+          }),
+        );
+        return;
+      }
+      if (req.method === "POST" && taskPath[2] === "frontier-claim") {
+        json(await controller.claimFrontier(id));
+        return;
+      }
+      if (req.method === "POST" && taskPath[2] === "frontier-complete") {
+        json(
+          await controller.completeFrontier(
+            id,
+            completeInput.parse(await body(req)).attemptId,
+          ),
+        );
+        return;
+      }
       if (req.method === "GET" && !taskPath[2]) {
         json(detail);
         return;
@@ -328,6 +402,20 @@ export async function startService(
         return;
       }
     }
+    const reviewLogPath = path.match(/^\/api\/v1\/reviews\/(\d+)\/log$/);
+    if (req.method === "GET" && reviewLogPath) {
+      const review = store.getReview(Number(reviewLogPath[1]));
+      if (!review?.logPath)
+        throw new SpillwayError("NOT_FOUND", "Review log not found.", 404);
+      const content = await artifact(
+        review.attemptId,
+        "reviewer.log",
+        review.logPath,
+      );
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(content);
+      return;
+    }
     const artifactPath = path.match(
       /^\/api\/v1\/artifacts\/(\d+)\/([a-zA-Z0-9._-]+)$/,
     );
@@ -349,7 +437,7 @@ export async function startService(
       res.end(
         page(
           "Queue",
-          `<p>Phase 1 · ${tasks.length} tasks · ${running ? "one slot active" : "slot idle"}. Refresh to see progress.</p><table><thead><tr><th>Task</th><th>Class</th><th>Profile</th><th>State</th><th>Reason</th><th>Banked</th></tr></thead><tbody>${rows}</tbody></table><p><small>Owner decisions stay in the CLI. Model reviews and scorecards arrive in later phases.</small></p>`,
+          `<p>Phase 2 · ${tasks.length} tasks · ${running ? "one slot active" : "slot idle"}. Refresh to see progress.</p><p>Frontier sessions: ${store.getFrontierState().available ? "available" : "off"} · planned reset: ${escapeHtml(store.getFrontierState().resetAt ?? "none")}</p><table><thead><tr><th>Task</th><th>Class</th><th>Profile</th><th>State</th><th>Reason</th><th>Banked</th></tr></thead><tbody>${rows}</tbody></table><p><small>Owner decisions stay in the CLI. Frontier work uses authorized Claude Code sessions; the service makes no automatic paid calls.</small></p>`,
           prefix,
         ),
       );
@@ -376,11 +464,18 @@ export async function startService(
           return `<h2>Attempt ${attempt.id}: ${escapeHtml(attempt.outcome)}</h2><p>${escapeHtml(attempt.startedAt)} → ${escapeHtml(attempt.endedAt ?? "running")}</p><p>${links}</p><pre>${escapeHtml(JSON.stringify({ baseSha: attempt.baseSha, resultSha: attempt.resultSha, harness: attempt.harness, harnessVersion: attempt.harnessVersion, verification: attempt.verification, usage: attempt.usage }, null, 2))}</pre>`;
         })
         .join("");
+      const reviewLinks = (detail.reviews ?? [])
+        .filter((review) => review.logPath)
+        .map(
+          (review) =>
+            `<a href="${prefix}api/v1/reviews/${review.id}/log">Review ${review.id} log</a>`,
+        )
+        .join(" · ");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(
         page(
           detail.task.id,
-          `<p>${escapeHtml(detail.task.state)} · review ${escapeHtml(detail.task.reviewTier)} · ${escapeHtml(detail.task.reason ?? "")}</p><h2>Task specification</h2><pre>${escapeHtml(detail.task.raw)}</pre>${attemptMarkup}<h2>Events</h2><pre>${escapeHtml(JSON.stringify(detail.events, null, 2))}</pre>`,
+          `<p>${escapeHtml(detail.task.state)} · review ${escapeHtml(detail.task.reviewTier)} · ${escapeHtml(detail.task.reason ?? "")}</p><h2>Task specification</h2><pre>${escapeHtml(detail.task.raw)}</pre>${attemptMarkup}<h2>Reviews</h2><p>${reviewLinks}</p><pre>${escapeHtml(JSON.stringify(detail.reviews, null, 2))}</pre><h2>Events</h2><pre>${escapeHtml(JSON.stringify(detail.events, null, 2))}</pre>`,
           prefix,
         ),
       );

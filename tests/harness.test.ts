@@ -33,6 +33,14 @@ if(prompt==='hang'||prompt==='usage-timeout'){if(prompt==='usage-timeout')consol
 else if(prompt==='malformed'){console.log('not json')}
 else if(prompt==='transport'){console.log(JSON.stringify({type:'error',error:{name:'APIError',data:{statusCode:503,message:'unavailable'}}}))}
 else if(prompt==='coding'){console.log(JSON.stringify({type:'error',error:{name:'APIError',data:{statusCode:400,message:'invalid request'}}}))}
+else if(prompt.startsWith('round-reset-')){
+console.log(JSON.stringify({type:'step_start',part:{}}));
+console.log(JSON.stringify({type:'step_finish',part:{reason:'tool-calls',tokens:{input:3,output:2},cost:0.001}}));
+console.log(JSON.stringify({type:'step_start',part:{}}));
+console.log(JSON.stringify({type:'step_finish',part:{reason:prompt.slice('round-reset-'.length),tokens:{input:12,output:7},cost:0.01}}));
+console.log(JSON.stringify({type:'step_start',part:{}}));
+console.log(JSON.stringify({type:'text',part:{text:'unfinished final round'}}));
+}
 else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));console.log(JSON.stringify({type:'step_finish',part:prompt==='missing'?{reason:'stop'}:{reason:prompt==='content-filter'?'content-filter':prompt==='length'?'length':prompt==='tool-round'?'tool-calls':'stop',tokens:{input:12,output:7},cost:0.01}}))}
 `,
       { mode: 0o700 },
@@ -153,6 +161,86 @@ else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));conso
       "project configuration",
     );
   });
+  it.each([
+    ["worker", "stop"],
+    ["review", "stop"],
+    ["worker", "length"],
+    ["review", "length"],
+    ["worker", "content-filter"],
+    ["review", "content-filter"],
+  ] as const)(
+    "requires completion of the latest %s round after an earlier %s finish",
+    async (purpose, reason) => {
+      input.purpose = purpose;
+      input.prompt = `round-reset-${reason}`;
+      const result = await new OpenCodeAdapter(executable).run(input);
+      expect(result.exit).toBe("transport_error");
+      expect(result.summary).toContain("completion evidence");
+      expect(result.usage?.inputTokens).toBe(15);
+      expect(result.usage?.outputTokens).toBe(9);
+      expect(result.usage?.costUsd).toBeCloseTo(0.011);
+    },
+  );
+  it("selects an explicit read-only primary reviewer and preserves worker mode", async () => {
+    input.purpose = "review";
+    const result = await new OpenCodeAdapter(executable).run(input);
+    expect(result.exit).toBe("completed");
+    const captured = JSON.parse(
+      await readFile(
+        join(root, "artifacts", "harness-home", "capture.json"),
+        "utf8",
+      ),
+    ) as {
+      args: string[];
+      config: {
+        permission: Record<string, string>;
+        agent: Record<
+          string,
+          { mode: string; permission: Record<string, string> }
+        >;
+      };
+    };
+    expect(captured.args.slice(-2)).toEqual(["--agent", "spillway-review"]);
+    expect(captured.config.agent["spillway-review"]?.mode).toBe("primary");
+    for (const permission of [
+      captured.config.permission,
+      captured.config.agent["spillway-review"]!.permission,
+    ]) {
+      expect(permission["*"]).toBe("deny");
+      for (const tool of ["read", "glob", "grep"])
+        expect(permission[tool]).toBe("allow");
+      for (const tool of [
+        "edit",
+        "write",
+        "bash",
+        "task",
+        "webfetch",
+        "websearch",
+        "external_directory",
+        "lsp",
+        "skill",
+      ])
+        expect(permission[tool]).toBe("deny");
+    }
+  });
+  it("passes only a private credential-file value to the configured provider", async () => {
+    const credential = join(root, "endpoint-key");
+    await writeFile(credential, "file-fixture-token\n", { mode: 0o600 });
+    input.endpoint.api_key_file = credential;
+    expect((await new OpenCodeAdapter(executable).run(input)).exit).toBe(
+      "completed",
+    );
+    const captured = JSON.parse(
+      await readFile(
+        join(root, "artifacts", "harness-home", "capture.json"),
+        "utf8",
+      ),
+    ) as { env: Record<string, string> };
+    expect(captured.env.SPILLWAY_ENDPOINT_KEY).toBe("file-fixture-token");
+    expect(await readFile(input.logPath, "utf8")).not.toContain(
+      "file-fixture-token",
+    );
+  });
   async function catalog(handler: RequestListener): Promise<string> {
     const server = createServer(handler);
     servers.push(server);
@@ -210,6 +298,24 @@ else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));conso
       ).healthy,
     ).toBe(false);
     expect(redirectedRequests).toBe(0);
+  });
+  it("authenticates the exact catalog using a private file reference", async () => {
+    const credential = join(root, "catalog-key");
+    await writeFile(credential, "catalog-fixture-token\n", { mode: 0o600 });
+    let authorization: string | undefined;
+    const url = await catalog((request, response) => {
+      authorization = request.headers.authorization;
+      response.end(JSON.stringify({ data: [{ id: "fixture-model" }] }));
+    });
+    expect(
+      (
+        await probeEndpoint(
+          { ...input.endpoint, url, api_key_file: credential },
+          "fixture-model",
+        )
+      ).healthy,
+    ).toBe(true);
+    expect(authorization).toBe("Bearer catalog-fixture-token");
   });
   it("bounds an indefinitely streaming catalog and handles a busy endpoint", async () => {
     const hanging = await catalog((_request, response) => {

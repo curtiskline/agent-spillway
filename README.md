@@ -2,9 +2,9 @@
 
 Bank precise coding tasks while frontier capacity is available, then drain them through an existing agent harness using a local or explicitly permitted hosted endpoint. Spillway independently verifies committed work and leaves a result branch for owner review.
 
-**Pre-alpha, Phase 0/1.** The walking skeleton provides a foreground service, private SQLite queue, parser/lint, CLI, stdio MCP, initial OpenCode adapter, Git worktrees, clean-checkout verification and a read-only local dashboard. Tests use disposable repositories, a fixture harness and mock model catalogs. They prove pipeline behavior, not model capability. A real LM Studio toy-task spike has passed with OpenCode and Aider; broader model qualification and clean-machine onboarding remain open gates. There is no published release or broadly qualified model profile yet. See [the spike record](docs/spikes/real-harness.md). Maintenance is the owner's spare-time project.
+**Pre-alpha, Phase 2.** Spillway provides a foreground or per-user service, private SQLite queue, parser/lint, CLI, stdio MCP, OpenCode adapter, Git worktrees, clean-checkout verification and an authenticated read-only local dashboard. Phase 2 adds local review, bounded repair, deterministic policy, manual frontier availability and owner-session frontier work. Tests use disposable repositories, a fixture harness and mock model catalogs. They prove pipeline behavior, not model capability. Real LM Studio toy-task spikes have passed with OpenCode and Aider, and a background-service worker/check/local-review workflow reached ready; broader model qualification and clean-machine onboarding remain open gates. There is no published release or broadly qualified model profile yet. See [the harness spike](docs/spikes/real-harness.md) and [local review checkpoint](docs/spikes/phase2-local-review.md). Maintenance is the owner's spare-time project.
 
-Local/frontier model review, bounded repair/escalation, service installation, frontier availability controls, audits, scorecards, exports and qualification commands are later milestones. The default review gate holds verified results pending review. Only explicit checks-only tasks, permitted by private config and free of policy flags, can become ready in this milestone. Spillway never auto-merges, pushes or deploys.
+The default local review runs through the approved OpenCode profile in a separate detached checkout. A verified result needs its configured review tier before becoming ready. Repairs are bounded by both task attempts and policy, with at most one local repair. Required frontier work holds until explicitly permitted; it runs only in an authorized Claude Code session, with no automatic paid provider calls. Audits, scorecards, sanitized exports, qualification commands and releases remain later milestones. Spillway never auto-merges, pushes or deploys.
 
 ## Development setup
 
@@ -22,7 +22,9 @@ Install [gitleaks](https://github.com/gitleaks/gitleaks#installing) before commi
 
 Copy [the example config](examples/config.example.yaml) to `~/.config/spillway/config.yaml`, outside this and target repositories. Protect config directories with mode 0700 and files with mode 0600. Register the absolute path of a **disposable repository** and its data policy; the default is local-only. Keep runtime data outside source checkouts (default `~/.spillway`).
 
-Install OpenCode separately and record the exact `opencode --version` in the private profile. Replace the example endpoint, exact model catalog ID and artifact identity with your own values. The endpoint must expose an OpenAI-compatible `/v1/models` catalog containing that model. Provider keys use an `api_key_env` reference; never put a literal key in config. Profile `qualified_classes` is an explicit private operator assertion: do not populate it from fixture results. OpenCode was selected after a real toy-task comparison with Aider. Qualify your own endpoint/model/context before relying on broader task classes. No configured real endpoint is required to run the test suite.
+Install OpenCode separately and record the exact `opencode --version` in the private profile. Replace the example endpoint, exact model catalog ID and artifact identity with your own values. The endpoint must expose an OpenAI-compatible `/v1/models` catalog containing that model. Provider keys use an `api_key_env` reference for foreground operation or an `api_key_file` reference for a private owner-only regular file outside Git; these references are mutually exclusive. Never put a literal key in config or daemon definitions. Per-user services clear inherited provider credentials, so use the file reference when a configured endpoint needs authentication in the background. Profile `qualified_classes` is an explicit private operator assertion: do not populate it from fixture results. OpenCode was selected after a real toy-task comparison with Aider. Qualify your own endpoint/model/context before relying on broader task classes. No configured real endpoint is required to run the test suite.
+
+Config can set `review_profile` to an approved local/open-weight profile and a version-1 `policy` for all task classes, maximum repairs and review timeout. Repository data policy is rechecked for reviews and frontier work; `frontier-ok` is required before code is supplied to an owner frontier session. Risky work always requires frontier review, and design work remains planner work. See [Phase 2 contracts](docs/PHASE2.md).
 
 Create the purpose-built disposable sample with `node scripts/create-sample.mjs ~/spillway-sample`. It prints the repository and task paths, and refuses to replace an existing repository. Its protected acceptance check fails on the baseline. Register the printed repository path in private config. For this narrow experiment, explicitly enable `allow_checks_only: true`; the example defaults to false. After a real endpoint is configured, bank the generated `~/spillway-sample/hello.md` using the workflow below.
 
@@ -42,13 +44,44 @@ spillway dashboard
 
 The service drains eligible work one task at a time. To drive one attempt manually, use `spillway run --once`; it calls a running service or temporarily starts the same controller using private configuration. [The example task](examples/tasks/hello.md) needs your registered disposable repository path, scope/context and trusted checks. For a fixture-style demonstration, choose `review: checks-only` and explicitly set `allow_checks_only: true`; this is not a qualification claim. Inspect the report and result branch before `spillway accept TASK-ID` or `spillway reject TASK-ID`. Acceptance records an owner decision and does not merge the branch.
 
+## Per-user background service
+
+After building, configuring the private file and stopping any foreground Spillway service:
+
+```sh
+spillway --config /absolute/private/config.yaml service install
+spillway service status
+spillway service stop
+spillway service start
+```
+
+Installation pins absolute Node, built CLI and config paths. It writes an owner-only launchd agent on macOS (`~/Library/LaunchAgents/com.agent-spillway.plist`) or a systemd user unit on Linux (`~/.config/systemd/user/agent-spillway.service`). The service works outside Git under the data directory, with private logs at `DATA_DIR/service/stdout.log` and `stderr.log`. Its environment starts clean with PATH only; credentials, NODE_OPTIONS and interactive session secrets are not inherited. Use `service install --no-start` to write without starting. Reinstall after moving/upgrading the pinned Node or CLI. `service uninstall` removes only the managed daemon definition and retains config, queue, worktrees and logs. It refuses unrelated service files or substituted symlinks. Set data_dir in private config; service actions do not use the global --data-dir override.
+
+This is a user service, never a root service. macOS starts it within the user's login session. Linux requires a functioning logged-in systemd user manager; enabling lingering for operation after logout is a separate owner OS decision, and Spillway does not enable it. Linux unit rendering/lifecycle is fixture-tested in CI; actual host service behavior still needs onboarding validation.
+
+## Frontier work in owner sessions
+
+Frontier availability initially defaults off. It does not represent vendor limit detection or provision a provider:
+
+```sh
+spillway frontier off --reset-at 2026-10-13T14:00:00-05:00
+spillway frontier status
+spillway frontier on
+spillway review show TASK-ID
+spillway review submit TASK-ID --file /absolute/private/review.json
+```
+
+The reset instant needs an explicit ISO timezone offset or Z. Availability permits pending work but does not launch a paid call. In an authorized Claude Code session, the plugin reviewer reads the service's exact SHA-pinned packet and submits JSON `{ "resultSha": "EXACT_SHA", "verdict": "accept", "findings": [] }` from a private file. Other verdicts are needs-repair and reject; findings use blocking/warning severity, a message and optional relative path. An accept cannot have blocking findings. The service rechecks availability, repository approval, branch identity and independent verification. The recorded provenance is owner-session attestation, not cryptographic proof of vendor identity.
+
+For an escalated frontier worker, use `spillway frontier claim TASK-ID` within an explicitly authorized session, work only in the returned managed checkout and commit the scoped result. Then run `spillway frontier complete TASK-ID --attempt ATTEMPT-ID`; the service verifies the commit independently and requires frontier review. Task packets, diffs, logs and worker claims are untrusted data. They cannot authorize policy changes or wider file/credential access. Owner acceptance remains a separate action after readiness.
+
 All commands accept `--config PATH` and `--data-dir PATH`. Queue commands require the service. `spillway inspect TASK-ID` reads worktree state without executing it. `spillway session-summary` degrades gracefully when the service is absent. The dashboard command prints a local authentication URL: keep it private. The server exchanges the token for an HttpOnly cookie restricted to an unguessable dashboard path, then redirects away from the initial token query. Dashboard URLs remain private.
 
 After a crash, interrupted work becomes held/uncertain and the queue pauses because detached workers may survive. Inspect the worktree, stop any surviving worker processes, then explicitly run `spillway reconcile TASK-ID --worker-stopped`. This abandons that interrupted task and preserves its evidence; bank a new task ID if you want to retry. Never reconcile while an old worker is still running.
 
-## Claude Code plugin scaffold and MCP
+## Claude Code plugin and MCP
 
-For local development, make the built `spillway` CLI available in PATH and launch Claude Code with `claude --plugin-dir ./plugins/spillway`. The scaffold includes `/spillway:bank`, `/spillway:status`, `/spillway:setup`, five MCP tools and a SessionStart summary hook. It follows the [official plugin manifest](https://code.claude.com/docs/en/plugins-reference) and [hook reference](https://code.claude.com/docs/en/hooks). The installed CLI must match the service version; incompatible descriptors are rejected. The setup skill explains development steps; it does not install a background service.
+For local development, make the built `spillway` CLI available in PATH and launch Claude Code with `claude --plugin-dir ./plugins/spillway`. The plugin includes `/spillway:bank`, `/spillway:status`, `/spillway:setup`, a SessionStart summary hook, and reviewer/frontier-worker subagents for explicitly authorized owner sessions. It follows the [official plugin manifest](https://code.claude.com/docs/en/plugins-reference), [hook reference](https://code.claude.com/docs/en/hooks) and [subagent reference](https://code.claude.com/docs/en/sub-agents). The installed CLI must match the service version; incompatible descriptors are rejected. Setup supports source builds and per-user service installation, respects existing authorization and does not enroll credentials or paid providers.
 
 The repository also has a marketplace skeleton. The intended release path is `/plugin marketplace add curtiskline/agent-spillway`, then `/plugin install spillway@agent-spillway`. End-to-end marketplace installation and live session banking are later acceptance gates, not a tested onboarding promise in this pre-alpha.
 

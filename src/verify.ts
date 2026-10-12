@@ -12,7 +12,7 @@ interface Change {
 function parseChanges(output: string): Change[] {
   const fields = output.split("\0");
   const changes: Change[] = [];
-  for (let index = 0; index < fields.length && fields[index]; ) {
+  for (let index = 0; index < fields.length && fields[index];) {
     const status = fields[index++]!;
     const path = fields[index++];
     if (!/^[AMDRCTUXB][0-9]*$/.test(status) || !path)
@@ -30,11 +30,20 @@ function parseChanges(output: string): Change[] {
 function flagsFor(changes: Change[], diff: string): string[] {
   const flags = new Set<string>();
   const sensitive =
-    /(?:^|\/)(?:package\.json|(?:package-lock|npm-shrinkwrap)\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|requirements[^/]*|pyproject\.toml|poetry\.lock|Dockerfile|(?:auth|authentication|authorization|security)(?:\.[^/]+)?|migrations)(?:\/|$)|^\.(?:github|gitlab)\/|\.gitlab-ci\.yml$/i;
+    /(?:^|\/)(?:package\.json|(?:package-lock|npm-shrinkwrap)\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|requirements[^/]*|pyproject\.toml|poetry\.lock|Dockerfile)(?:\/|$)|^\.(?:github|gitlab)\/|\.gitlab-ci\.yml$/i;
+  const securityName =
+    /(?:^|[/._-])(?:auth|authentication|authorization|authenticate|authorize|authn|authz|security|permissions?|secrets?|migrations?)(?=[/._-]|$)/i;
   const testPath =
     /(?:^|\/)(?:tests?|__tests__|spec)(?:\/|$)|\.(?:test|spec)\.[^/]+$/i;
   for (const change of changes) {
-    if (change.paths.some((path) => sensitive.test(path)))
+    // Treat filename tokens and camelCase names like directory segments too.
+    if (
+      change.paths.some(
+        (path) =>
+          sensitive.test(path) ||
+          securityName.test(path.replace(/([a-z0-9])([A-Z])/g, "$1-$2")),
+      )
+    )
       flags.add("security-sensitive-path");
     if (
       change.status.startsWith("D") &&

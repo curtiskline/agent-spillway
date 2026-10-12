@@ -59,6 +59,35 @@ const publicErrorCodes = new Set([
   "invalid_review",
   "not_found",
   "NOT_UNCERTAIN",
+  "FRONTIER_OFF",
+  "FRONTIER_UNAVAILABLE",
+  "NOT_PENDING_REVIEW",
+  "NOT_FRONTIER_WORK",
+  "REVIEW_STALE",
+  "INVALID_REVIEW",
+  "invalid_frontier",
+  "invalid_report",
+  "REVIEW_REQUIRED",
+  "ATTEMPT_MISMATCH",
+  "FRONTIER_CLAIM",
+  "FRONTIER_BUDGET",
+  "DEPENDENCIES",
+  "HANDOFF_FAILED",
+  "INTERRUPTED",
+  "NOT_CLAIMABLE",
+  "NOT_REVIEWABLE",
+  "NO_REPAIR_RESULT",
+  "REPAIR_SIZE",
+  "REVIEW_SIZE",
+  "PROMPT_TOO_LARGE",
+  "STALE_ATTEMPT",
+  "STALE_REVIEW",
+  "VERIFICATION_FAILED",
+  "database_state",
+  "duplicate_review",
+  "immutable_review",
+  "invalid_action",
+  "stale_review",
 ]);
 
 /** Stateless authenticated client. The service alone owns queue persistence. */
@@ -81,7 +110,7 @@ export class ServiceClient {
       }
       handle = await open(
         join(this.dataDir, "service.json"),
-        constants.O_RDONLY | constants.O_NOFOLLOW,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
       );
       const info = await handle.stat();
       if (
@@ -175,7 +204,9 @@ export class ServiceClient {
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(
-          path === "/api/v1/run" ? 24 * 60 * 60 * 1000 : 5000,
+          path === "/api/v1/run" || path.endsWith("/frontier-complete")
+            ? 24 * 60 * 60 * 1000
+            : 5000,
         ),
       });
     } catch {

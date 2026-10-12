@@ -1,0 +1,153 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "data_dir": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "default": 7433
+    },
+    "poll_interval_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 3600000,
+      "default": 5000
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "data_policy": {
+            "enum": ["local-only", "open-weight-hosted-ok", "frontier-ok"],
+            "default": "local-only"
+          }
+        },
+        "required": ["path"]
+      },
+      "minItems": 1
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "kind": {
+            "enum": ["local", "open-weight-hosted", "frontier"]
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "HTTP(S) OpenAI-compatible /v1 endpoint with no credentials, query or fragment."
+          },
+          "api_key_env": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
+        "required": ["id", "kind", "url"]
+      },
+      "minItems": 1
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "endpoint": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "model_artifact": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "harness": {
+            "const": "opencode"
+          },
+          "harness_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "qualified_classes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "tests",
+                "small-fix",
+                "mechanical",
+                "small-feature",
+                "risky",
+                "design"
+              ]
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "endpoint",
+          "model",
+          "model_artifact",
+          "harness",
+          "harness_version",
+          "qualified_classes"
+        ]
+      },
+      "minItems": 1
+    },
+    "default_profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "allow_checks_only": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "version",
+    "repositories",
+    "endpoints",
+    "profiles",
+    "default_profile"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/curtiskline/agent-spillway/schemas/config.schema.json",
+  "title": "Agent Spillway private configuration v1",
+  "description": "Runtime additionally resolves canonical paths and bindings, rejects duplicate IDs, and requires private data/config outside Git repositories."
+}

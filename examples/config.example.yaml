@@ -1,0 +1,24 @@
+# Copy outside all repositories to ~/.config/spillway/config.yaml.
+# Replace the sample repository, exact model/artifact and harness version.
+# This is an example binding, NOT a model qualification result.
+version: 1
+repositories:
+  - path: ~/spillway-sample/repo
+    data_policy: local-only
+endpoints:
+  - id: local
+    kind: local
+    url: http://127.0.0.1:8080/v1
+    # api_key_env: SPILLWAY_LOCAL_API_KEY
+profiles:
+  - id: sample
+    endpoint: local
+    model: your-exact-model-id
+    model_artifact: your-exact-artifact-hash-or-revision
+    harness: opencode
+    harness_version: your-exact-opencode-version
+    qualified_classes: [mechanical]
+default_profile: sample
+allow_checks_only: false # Explicitly enable only for a trusted experimental sample.
+port: 7433
+poll_interval_ms: 5000

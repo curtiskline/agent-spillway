@@ -1,0 +1,9 @@
+# Working on Agent Spillway
+
+Read docs/design.md, docs/ARCHITECTURE.md and docs/INTERFACES.md before changes. Initial scope is Phase 0/1. Architecture changes go through the orchestrator and are recorded in docs/DECISIONS.md and short docs/decisions ADRs. Update docs/IMPLEMENTATION_PLAN.md with durable status and verification.
+
+TypeScript ESM, explicit .js import suffixes, strict types, no `any` at boundaries. Node >=22.13. Keep dependencies small. Commands: npm ci; npm run build; npm run typecheck; npm run lint; npm test. Tests use temporary directories outside the checkout, real Git fixture repositories, mock catalogs and a fixture subprocess harness. No real provider credentials in CI or capability claims from fixtures.
+
+All state, config, prompts, logs and evidence outside this or target repos. Default ~/.config/spillway and ~/.spillway. Never hardcode secrets or log inherited environment/provider keys. Task checks are trusted owner shell commands; all other commands use argument arrays. This is not a sandbox. Keep dashboard loopback/read-only/authenticated, HTML escaped, artifacts allowlisted. Policy and verification, never worker claims, authorize readiness. No auto merge, push from runtime, deployment, hosted dependency or model/tool loop.
+
+Subagents follow exact disjoint ownership and frozen contracts. Report functionality, test commands/results, assumptions and unresolved issues. Don't edit shared package/contracts/docs or another agent's files without coordination. No agent commits; orchestrator integrates and signs off. Run meaningful component tests and typecheck; integration/full checks follow centrally. Critical authentication/data integrity changes get independent review. Conventional concise commits, DCO sign-off. Install `.githooks` via git config core.hooksPath .githooks; gitleaks is required before public push. No private config/data tracked.

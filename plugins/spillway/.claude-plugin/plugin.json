@@ -1,0 +1,8 @@
+{
+  "name": "spillway",
+  "version": "0.0.0",
+  "description": "Bank precise coding tasks and read queue results from Agent Spillway (pre-alpha).",
+  "author": { "name": "Curt Kline" },
+  "repository": "https://github.com/curtiskline/agent-spillway",
+  "license": "Apache-2.0"
+}

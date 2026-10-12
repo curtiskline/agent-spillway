@@ -1,0 +1,137 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "repo": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "base": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "class": {
+      "enum": [
+        "tests",
+        "small-fix",
+        "mechanical",
+        "small-feature",
+        "risky",
+        "design"
+      ]
+    },
+    "after": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+      },
+      "minItems": 0,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "default": []
+    },
+    "scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "description": "Repository-relative POSIX path or glob; absolute paths, backslashes, parent traversal, leading negation and controls are rejected at runtime."
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "protected": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "description": "Repository-relative POSIX path or glob; absolute paths, backslashes, parent traversal, leading negation and controls are rejected at runtime."
+      },
+      "minItems": 0,
+      "maxItems": 100,
+      "default": []
+    },
+    "context": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "description": "Repository-relative POSIX path or glob; absolute paths, backslashes, parent traversal, leading negation and controls are rejected at runtime."
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16384
+      },
+      "minItems": 0,
+      "maxItems": 100
+    },
+    "review": {
+      "enum": ["default", "checks-only", "local", "frontier"],
+      "default": "default"
+    },
+    "no_checks_justification": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 30
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 2
+        }
+      },
+      "required": [],
+      "default": {
+        "max_minutes": 30,
+        "max_attempts": 2
+      }
+    }
+  },
+  "required": ["repo", "base", "class", "scope", "context", "checks"],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/curtiskline/agent-spillway/schemas/task.schema.json",
+  "title": "Agent Spillway task frontmatter v1",
+  "description": "Frontmatter only. Runtime additionally requires nonempty Objective and Acceptance criteria Markdown sections, rejects YAML aliases/anchors, and forces frontier review without checks.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "checks": {
+            "maxItems": 0
+          }
+        },
+        "required": ["checks"]
+      },
+      "then": {
+        "required": ["no_checks_justification"]
+      }
+    }
+  ]
+}

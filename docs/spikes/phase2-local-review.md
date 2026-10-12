@@ -1,6 +1,6 @@
 # Real local review and background service — 2026-10-12
 
-Phase 2 ran a new purpose-built disposable sample through the installed macOS per-user launchd service. Private config, endpoint address, queue, raw transcripts and installed package are outside this repository. The earlier Phase 1 daemon was stopped while idle and its private config/database backed up before migration. The original sample and records were preserved.
+Phase 2 ran a new purpose-built disposable sample through the installed macOS per-user launchd service. Private config, endpoint address, queue, raw transcripts and installed package are outside this repository. The installed CLI, actual stdio MCP tool listing/result retrieval and session-summary hook also passed without inference. Live Claude session/marketplace loading remains a separate gate. The earlier Phase 1 daemon was stopped while idle and its private config/database backed up before migration. The original sample and records were preserved.
 
 The service was installed from a locally built package with absolute Node/CLI/config pins and a clean PATH-only environment. Actual install, status, stop and restart passed; the queue persisted and the service remains running. Linux user-service rendering/lifecycle has fixture tests, including restart after changed pins; actual Linux host operation remains unverified.
 

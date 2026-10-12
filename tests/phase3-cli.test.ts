@@ -72,6 +72,16 @@ it("routes report, audit, planning, publication and qualification through the in
       job: { id: jobId, status: "completed" },
       result: { provenance: "fixture", qualified: false },
     });
+    const view = await fetch(`${service.url}/qualifications/${jobId}`, {
+      headers: { Authorization: `Bearer ${service.token}` },
+    });
+    expect(view.status).toBe(200);
+    const html = await view.text();
+    expect(html).toContain("Observational result; model is not qualified.");
+    expect(html).toContain("read-only");
+    expect(html).not.toContain(f.config.endpoints[0]!.url);
+    expect(html).not.toContain(f.data);
+    expect(html).not.toContain("<form");
     expect(
       (await invoke(["accept", "cli-pilot", "--owner-minutes", "Infinity"]))
         .code,
@@ -101,7 +111,7 @@ it("serves escaped read-only scorecard, audit and endpoint views without exposin
     });
     const cookie = handshake.headers.get("set-cookie")!.split(";")[0]!;
     const prefix = handshake.headers.get("location")!;
-    for (const path of ["scorecard", "audits", "endpoints"]) {
+    for (const path of ["scorecard", "audits", "endpoints", "qualifications"]) {
       const response = await fetch(service.url + prefix + path, {
         headers: { Cookie: cookie },
       });

@@ -134,7 +134,7 @@ async function body(req: IncomingMessage): Promise<unknown> {
   }
 }
 function page(title: string, content: string, prefix = "/"): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Agent Spillway</title><style>body{font:16px system-ui;max-width:1100px;margin:3rem auto;padding:0 1rem;background:#f6f7f8;color:#18222d}a{color:#176198}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:.8rem;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:1rem;border:1px solid #ddd}small{color:#536171}h1{letter-spacing:-.04em}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem}.card{background:white;padding:1.3rem;border:1px solid #ddd;border-radius:8px}.card strong{display:block;font-size:2rem}.bar{height:8px;background:#e5e9ed;border-radius:4px;overflow:hidden;margin-top:6px}.fill{height:100%;background:#25855a}.note{padding:1rem;background:#fff3d8;border-radius:8px}nav{line-height:2}.state{font-family:monospace}</style></head><body><nav><a href="${prefix}">Agent Spillway</a> · <a href="${prefix}scorecard">Scorecard</a> · <a href="${prefix}audits">Audits</a> · <a href="${prefix}endpoints">Endpoints</a> · read-only</nav><h1>${escapeHtml(title)}</h1>${content}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Agent Spillway</title><style>body{font:16px system-ui;max-width:1100px;margin:3rem auto;padding:0 1rem;background:#f6f7f8;color:#18222d}a{color:#176198}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:.8rem;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:1rem;border:1px solid #ddd}small{color:#536171}h1{letter-spacing:-.04em}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem}.card{background:white;padding:1.3rem;border:1px solid #ddd;border-radius:8px}.card strong{display:block;font-size:2rem}.bar{height:8px;background:#e5e9ed;border-radius:4px;overflow:hidden;margin-top:6px}.fill{height:100%;background:#25855a}.note{padding:1rem;background:#fff3d8;border-radius:8px}nav{line-height:2}.state{font-family:monospace}</style></head><body><nav><a href="${prefix}">Agent Spillway</a> · <a href="${prefix}scorecard">Scorecard</a> · <a href="${prefix}audits">Audits</a> · <a href="${prefix}endpoints">Endpoints</a> · <a href="${prefix}qualifications">Qualifications</a> · read-only</nav><h1>${escapeHtml(title)}</h1>${content}</body></html>`;
 }
 function scorecardMarkup(score: Scorecard): string {
   const counts = score.tasks;
@@ -672,6 +672,27 @@ export async function startService(
           prefix,
         ),
       );
+      return;
+    }
+    if (req.method === "GET" && path === "/qualifications") {
+      const rows = store.listQualificationJobs().map((job) =>
+        `<tr><td><a href="${prefix}qualifications/${escapeHtml(job.id)}">${escapeHtml(job.id)}</a></td><td>${escapeHtml(job.profileId)}</td><td>${escapeHtml(job.status)}${job.reconciledAt ? " (reconciled)" : ""}</td><td>${escapeHtml(job.startedAt)}</td></tr>`,
+      ).join("");
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(page("Qualification runs", `<p>Fixed tool workloads use the local endpoint. Inspect a run for its final results; refresh to see progress.</p><table><thead><tr><th>Run</th><th>Profile</th><th>Status</th><th>Started</th></tr></thead><tbody>${rows}</tbody></table><p class="note">Fixture results and incomplete metadata cannot qualify a model. Tool qualification does not promote coding task classes.</p>`, prefix));
+      return;
+    }
+    const qualificationView = path.match(/^\/qualifications\/([a-z0-9-]+)$/);
+    if (req.method === "GET" && qualificationView) {
+      const { job, result } = await controller.qualificationDetail(idSchema.parse(qualificationView[1]));
+      const rows = result?.cases.map((row) =>
+        `<tr><td>${escapeHtml(row.capability)}</td><td>${escapeHtml(row.outcome)}</td><td>${(row.durationMs / 1000).toFixed(1)} seconds</td><td>${row.observations.rounds}</td><td>${escapeHtml(row.reason ?? "")}</td></tr>`,
+      ).join("") ?? "";
+      const outcome = result
+        ? `${result.cases.filter((row) => row.outcome === "passed").length} of ${result.cases.length} passed. ${result.qualified ? "Qualified for the fixed tool workload." : "Observational result; model is not qualified."}`
+        : "No final result available. Refresh to see progress.";
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(page("Qualification result", `<p>${escapeHtml(job.status)} · ${escapeHtml(job.profileId)}</p><p>${escapeHtml(outcome)}</p><p>${escapeHtml(job.reason ?? "")}</p>${result ? `<p>Provenance: ${escapeHtml(result.provenance)} · context ${escapeHtml(result.metadata.contextTokens ?? "unknown")} tokens · metadata ${result.metadataComplete ? "complete" : "incomplete"}.</p><table><thead><tr><th>Capability</th><th>Outcome</th><th>Duration</th><th>Rounds</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>` : ""}<p class="note">Owner acceptance, coding-class qualification and release remain separate decisions.</p>`, prefix));
       return;
     }
     if (req.method === "GET" && path === "/endpoints") {

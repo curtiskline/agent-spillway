@@ -96,6 +96,7 @@ try {
     await readFile(join(packageDir, "package.json"), "utf8"),
   );
   await access(join(packageDir, "dist", "qualification.js"));
+  await access(join(packageDir, "scripts", "harness-wire-smoke.mjs"));
   await access(join(packageDir, "eval", "workload-v1", "acceptance.cjs"));
   stage = "plugin-manifests";
   const plugin = JSON.parse(

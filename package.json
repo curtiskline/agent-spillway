@@ -20,7 +20,8 @@
     "NOTICE",
     "README.md",
     "eval",
-    "profiles"
+    "profiles",
+    "scripts/harness-wire-smoke.mjs"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -29,7 +30,8 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "validate:community": "npm run build && node scripts/validate-community.mjs",
-    "smoke:onboarding": "node scripts/onboarding-smoke.mjs"
+    "smoke:onboarding": "node scripts/onboarding-smoke.mjs",
+    "smoke:harness": "node scripts/harness-wire-smoke.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

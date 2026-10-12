@@ -233,7 +233,7 @@ export class ServiceClient {
     } catch {
       throw new SpillwayError(
         "service_unavailable",
-        "Spillway service is unavailable. Start or restart spillway serve.",
+        "The service connection was interrupted. Check Spillway status before retrying or restarting; execution may still be running.",
         503,
       );
     }

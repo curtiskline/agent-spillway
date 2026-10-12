@@ -76,23 +76,37 @@ else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));conso
     delete process.env.SPILLWAY_FIXTURE_API_KEY;
     delete process.env.SPILLWAY_OTHER_PROVIDER_KEY;
   });
-  it("pins qualification sampling temperature without changing ordinary worker defaults", async () => {
-    const result = await new OpenCodeAdapter(executable).run({
-      ...input,
-      temperature: 0,
-    });
-    expect(result.exit).toBe("completed");
-    const captured = JSON.parse(
-      await readFile(
-        join(root, "artifacts", "harness-home", "capture.json"),
-        "utf8",
-      ),
-    );
-    expect(captured.config.agent.build.temperature).toBe(0);
-    await expect(
-      new OpenCodeAdapter(executable).run({ ...input, temperature: Infinity }),
-    ).rejects.toThrow("Temperature");
-  });
+  it.each([0, 0.3])(
+    "enables explicit sampling temperature %s on the selected custom model",
+    async (temperature) => {
+      const result = await new OpenCodeAdapter(executable).run({
+        ...input,
+        temperature,
+      });
+      expect(result.exit).toBe("completed");
+      const captured = JSON.parse(
+        await readFile(
+          join(root, "artifacts", "harness-home", "capture.json"),
+          "utf8",
+        ),
+      );
+      expect(captured.config.agent.build.temperature).toBe(temperature);
+      expect(
+        captured.config.provider.spillway.models["fixture-model"].temperature,
+      ).toBe(true);
+      expect(
+        JSON.parse(
+          await readFile(join(root, "artifacts", "model.json"), "utf8"),
+        ),
+      ).toMatchObject({ agent: "build", temperature });
+      await expect(
+        new OpenCodeAdapter(executable).run({
+          ...input,
+          temperature: Infinity,
+        }),
+      ).rejects.toThrow("Temperature");
+    },
+  );
   it("uses the documented command/provider config, stdin and private isolated state", async () => {
     process.env.SPILLWAY_OTHER_PROVIDER_KEY = "unrelated-fixture-secret";
     process.env.SPILLWAY_FIXTURE_API_KEY = "configured-fixture-secret";
@@ -122,6 +136,8 @@ else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));conso
       "json",
       "--model",
       "spillway/fixture-model",
+      "--agent",
+      "build",
     ]);
     expect(captured.prompt).toBe(input.prompt);
     expect(captured.env.HOME).toContain("/artifacts/harness-home");
@@ -140,6 +156,79 @@ else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));conso
       "configured-fixture-secret",
     );
   });
+  it.each(["worker", "review"] as const)(
+    "serializes %s configuration without auxiliary model or subagent work",
+    async (purpose) => {
+      input.purpose = purpose;
+      expect((await new OpenCodeAdapter(executable).run(input)).exit).toBe(
+        "completed",
+      );
+      const captured = JSON.parse(
+        await readFile(
+          join(root, "artifacts", "harness-home", "capture.json"),
+          "utf8",
+        ),
+      ) as {
+        args: string[];
+        config: {
+          default_agent: string;
+          subagent_depth: number;
+          compaction: { auto: boolean; prune: boolean };
+          experimental: { batch_tool: boolean };
+          agent: Record<
+            string,
+            {
+              disable?: boolean;
+              mode?: string;
+              model?: string;
+              temperature?: number;
+              permission?: Record<string, string>;
+            }
+          >;
+          permission: Record<string, string>;
+          provider: {
+            spillway: { models: Record<string, { temperature: boolean }> };
+          };
+        };
+      };
+      const primary = purpose === "review" ? "spillway-review" : "build";
+      expect(captured.args.slice(-2)).toEqual(["--agent", primary]);
+      expect(captured.config.default_agent).toBe(primary);
+      expect(captured.config.agent[primary]).toMatchObject({
+        mode: "primary",
+        model: "spillway/fixture-model",
+        temperature: 0,
+      });
+      for (const auxiliary of [
+        "title",
+        "summary",
+        "compaction",
+        "general",
+        "explore",
+        "plan",
+      ])
+        expect(captured.config.agent[auxiliary]).toEqual({ disable: true });
+      if (purpose === "review")
+        expect(captured.config.agent.build).toEqual({ disable: true });
+      expect(captured.config.subagent_depth).toBe(0);
+      expect(captured.config.compaction).toEqual({ auto: false, prune: false });
+      expect(captured.config.experimental.batch_tool).toBe(false);
+      expect(
+        captured.config.provider.spillway.models["fixture-model"]?.temperature,
+      ).toBe(true);
+      for (const permission of [
+        captured.config.permission,
+        captured.config.agent[primary]!.permission!,
+      ]) {
+        expect(permission.task).toBe("deny");
+        expect(permission.skill).toBe("deny");
+      }
+      if (purpose === "worker") {
+        expect(captured.config.permission.bash).toBeUndefined();
+        expect(captured.config.permission["*"]).toBe("allow");
+      }
+    },
+  );
   it.each([
     ["missing", "completed"],
     ["malformed", "transport_error"],

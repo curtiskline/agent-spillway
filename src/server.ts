@@ -194,6 +194,7 @@ export async function startService(
   let url = "";
   let timer: ReturnType<typeof setInterval> | undefined;
   let closing = false;
+  let closePromise: Promise<void> | undefined;
   let running: Promise<string | null> | undefined;
   const qualificationRuns = new Set<Promise<void>>();
   let evidenceStatus: EvidenceStatus = {
@@ -220,6 +221,17 @@ export async function startService(
         flushing = undefined;
       });
     return flushing;
+  };
+  const drainEvidence = async (): Promise<EvidenceStatus> => {
+    // Joiners may inherit a flush that predates their committed mutations.
+    // Drain the finite prefix present at entry, without chasing later writes.
+    const counts = store.evidenceCounts();
+    const target = counts.pending + counts.delivered;
+    let status = await syncEvidence();
+    while (!status.lastError && status.delivered < target) {
+      status = await syncEvidence();
+    }
+    return status;
   };
   const dispatch = (): Promise<string | null> => {
     if (closing) return Promise.resolve(null);
@@ -286,8 +298,11 @@ export async function startService(
       );
     return readFile(resolved, "utf8");
   };
+  const activeRequests = new Set<Promise<void>>();
   const server = createServer((req, res) => {
-    void route(req, res).catch((error) => {
+    res.on("error", () => { res.destroy(); });
+    const pending = route(req, res).catch((error) => {
+      if (res.destroyed || res.writableEnded) return;
       if (res.headersSent) {
         res.end();
         return;
@@ -309,12 +324,17 @@ export async function startService(
           },
         }),
       );
-    });
+    }).catch(() => {
+      // A disconnected response cannot report an error to its caller.
+      res.destroy();
+    }).finally(() => { activeRequests.delete(pending); });
+    activeRequests.add(pending);
   });
   async function route(
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
+    if (closing) throw new SpillwayError("SHUTTING_DOWN", "Service is shutting down.", 503);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -407,7 +427,7 @@ export async function startService(
       (req.method === "GET" && path === "/api/v1/evidence") ||
       (req.method === "POST" && path === "/api/v1/evidence/sync")
     ) {
-      json(await syncEvidence());
+      json(await drainEvidence());
       return;
     }
     if (req.method === "GET" && path === "/api/v1/endpoints") {
@@ -818,29 +838,33 @@ export async function startService(
     token,
     controller,
     store,
-    async close() {
-      if (closing) return;
+    close() {
+      if (closePromise) return closePromise;
       closing = true;
-      if (timer) clearInterval(timer);
-      abort.abort();
-      const closed = new Promise<void>((resolve) =>
-        server.close(() => resolve()),
-      );
-      server.closeIdleConnections();
-      await running?.catch(() => {});
-      await closed;
-      await controller.waitForIdle();
-      await Promise.all(qualificationRuns);
-      const descriptor = JSON.parse(
-        await readFile(join(config.data_dir, "service.json"), "utf8").catch(
-          () => "{}",
-        ),
-      ) as Partial<ServiceDescriptor>;
-      if (descriptor.token === token)
-        await rm(join(config.data_dir, "service.json"), { force: true });
-      await syncEvidence();
-      unlock();
-      store.close();
+      closePromise = Promise.resolve().then(async () => {
+        if (timer) clearInterval(timer);
+        abort.abort();
+        const closed = new Promise<void>((resolve) =>
+          server.close(() => resolve()),
+        );
+        server.closeIdleConnections();
+        await running?.catch(() => {});
+        await closed;
+        await Promise.allSettled(activeRequests);
+        await controller.waitForIdle();
+        await Promise.all(qualificationRuns);
+        const descriptor = JSON.parse(
+          await readFile(join(config.data_dir, "service.json"), "utf8").catch(
+            () => "{}",
+          ),
+        ) as Partial<ServiceDescriptor>;
+        if (descriptor.token === token)
+          await rm(join(config.data_dir, "service.json"), { force: true });
+        await drainEvidence();
+        unlock();
+        store.close();
+      });
+      return closePromise;
     },
   };
 }

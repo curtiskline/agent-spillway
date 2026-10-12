@@ -29,6 +29,7 @@ const object = (value: unknown): value is Record<string, unknown> =>
 const publicErrorCodes = new Set([
   "busy",
   "BUSY",
+  "SHUTTING_DOWN",
   "NOT_FOUND",
   "NOT_READY",
   "NO_ATTEMPT",

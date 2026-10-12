@@ -23,6 +23,16 @@ const schema = z
         z
           .object({
             path: nonempty,
+            publication: z
+              .object({
+                public_url: z
+                  .string()
+                  .regex(
+                    /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/,
+                  ),
+              })
+              .strict()
+              .optional(),
             data_policy: z
               .enum(["local-only", "open-weight-hosted-ok", "frontier-ok"])
               .default("local-only"),
@@ -43,7 +53,11 @@ const schema = z
               .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
               .optional(),
           })
-          .strict().refine(endpoint => !(endpoint.api_key_env && endpoint.api_key_file), 'Choose only one credential reference'),
+          .strict()
+          .refine(
+            (endpoint) => !(endpoint.api_key_env && endpoint.api_key_file),
+            "Choose only one credential reference",
+          ),
       )
       .min(1),
     profiles: z
@@ -65,6 +79,7 @@ const schema = z
     allow_checks_only: z.boolean().default(false),
     policy: policySchema.optional(),
     review_profile: identifier.optional(),
+    audit_rate: z.number().min(0).max(1).default(0.3),
   })
   .strict();
 
@@ -193,10 +208,19 @@ export async function validateConfig(
   if (!config.profiles.some((profile) => profile.id === config.default_profile))
     throw new SpillwayError("invalid_config", "Default profile is unknown");
   if (config.review_profile) {
-    const profile = config.profiles.find(item => item.id === config.review_profile);
-    if (!profile) throw new SpillwayError('invalid_config', 'Review profile is unknown');
-    if (config.endpoints.find(endpoint => endpoint.id === profile.endpoint)?.kind === 'frontier') {
-      throw new SpillwayError('invalid_config', 'Review profile must use a local or open-weight endpoint');
+    const profile = config.profiles.find(
+      (item) => item.id === config.review_profile,
+    );
+    if (!profile)
+      throw new SpillwayError("invalid_config", "Review profile is unknown");
+    if (
+      config.endpoints.find((endpoint) => endpoint.id === profile.endpoint)
+        ?.kind === "frontier"
+    ) {
+      throw new SpillwayError(
+        "invalid_config",
+        "Review profile must use a local or open-weight endpoint",
+      );
     }
   }
   const repositories = [];
@@ -226,8 +250,13 @@ export async function validateConfig(
     );
   for (const endpoint of config.endpoints) {
     if (endpoint.api_key_file) {
-      endpoint.api_key_file = await validateCredentialFile(expand(endpoint.api_key_file));
-      await ensureOutsideRepositories(endpoint.api_key_file,repositories.map(repo => repo.path));
+      endpoint.api_key_file = await validateCredentialFile(
+        expand(endpoint.api_key_file),
+      );
+      await ensureOutsideRepositories(
+        endpoint.api_key_file,
+        repositories.map((repo) => repo.path),
+      );
     }
   }
   const data_dir = await canonicalFuture(
@@ -241,7 +270,12 @@ export async function validateConfig(
   );
   await mkdir(data_dir, { recursive: true, mode: 0o700 });
   await chmod(data_dir, 0o700);
-  return { ...config, policy: getPolicy(config.policy), repositories, data_dir };
+  return {
+    ...config,
+    policy: getPolicy(config.policy),
+    repositories,
+    data_dir,
+  };
 }
 
 export async function loadConfig(

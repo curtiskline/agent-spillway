@@ -1,0 +1,777 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "suiteVersion": {
+      "const": 1
+    },
+    "scope": {
+      "const": "tool-workload-only"
+    },
+    "provenance": {
+      "enum": [
+        "real",
+        "fixture"
+      ]
+    },
+    "qualified": {
+      "type": "boolean"
+    },
+    "uncertain": {
+      "type": "boolean"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finishedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "profileId": {
+      "type": "string"
+    },
+    "catalogModel": {
+      "type": "string"
+    },
+    "harnessVersion": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "metadataComplete": {
+      "type": "boolean"
+    },
+    "workloadHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "enum": [
+              "discovery",
+              "read-search",
+              "structured-edit",
+              "command",
+              "tool-error-recovery",
+              "test-driven-repair",
+              "multi-round"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "passed",
+              "failed",
+              "timeout",
+              "transport_error",
+              "held",
+              "uncertain"
+            ]
+          },
+          "durationMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "inputTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "outputTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "costUsd": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "required": []
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baseSha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resultSha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "passed": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "resultSha": {
+                    "type": "string",
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+                  },
+                  "changedPaths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "flags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "checks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "command": {
+                          "type": "string"
+                        },
+                        "exitCode": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "timedOut": {
+                          "type": "boolean"
+                        },
+                        "durationMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "logPath": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "exitCode",
+                        "timedOut",
+                        "durationMs",
+                        "logPath"
+                      ]
+                    }
+                  },
+                  "diffPath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "passed",
+                  "changedPaths",
+                  "flags",
+                  "checks"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observations": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "valid": {
+                "type": "boolean"
+              },
+              "finalStop": {
+                "type": "boolean"
+              },
+              "rounds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "tool": {
+                      "enum": [
+                        "read",
+                        "glob",
+                        "grep",
+                        "edit",
+                        "write",
+                        "apply_patch",
+                        "bash"
+                      ]
+                    },
+                    "status": {
+                      "enum": [
+                        "completed",
+                        "error"
+                      ]
+                    },
+                    "round": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "eventIndex": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "status",
+                    "round",
+                    "eventIndex",
+                    "exitCode"
+                  ]
+                }
+              },
+              "requirementsMet": {
+                "type": "boolean"
+              },
+              "contextBytesObserved": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "valid",
+              "finalStop",
+              "rounds",
+              "tools",
+              "requirementsMet",
+              "contextBytesObserved"
+            ]
+          },
+          "logPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "capability",
+          "outcome",
+          "durationMs",
+          "reason",
+          "usage",
+          "baseSha",
+          "resultSha",
+          "verification",
+          "observations",
+          "logPath",
+          "worktree",
+          "contextBytes"
+        ]
+      }
+    },
+    "requestedSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temperature",
+        "concurrency"
+      ],
+      "properties": {
+        "temperature": {
+          "const": 0
+        },
+        "concurrency": {
+          "const": 1
+        }
+      }
+    }
+  },
+  "required": [
+    "version",
+    "suiteVersion",
+    "scope",
+    "provenance",
+    "qualified",
+    "uncertain",
+    "startedAt",
+    "finishedAt",
+    "profileId",
+    "catalogModel",
+    "harnessVersion",
+    "metadata",
+    "metadataComplete",
+    "workloadHash",
+    "failures",
+    "cases",
+    "requestedSettings"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Private Agent Spillway qualification result v1",
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*(?:/[A-Za-z][A-Za-z0-9.+_-]*)?$",
+              "not": {
+                "pattern": "^(?:home|Users|private|var|tmp|etc|Volumes)/|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|(?:token|secret|password|credential)[_-]|[A-Fa-f0-9]{32,}|\\d+\\.\\d+\\.\\d+\\.\\d+"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelArtifact": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "harnessVersion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serverVersion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hardware": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cpuCores": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                },
+                "memoryGiB": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 65536
+                },
+                "gpuCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "gpuMemoryGiB": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 65536
+                }
+              },
+              "required": [
+                "memoryGiB"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serverEngine": {
+          "anyOf": [
+            {
+              "enum": [
+                "lm-studio",
+                "llama-cpp",
+                "ollama",
+                "vllm",
+                "sglang"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "quantization": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*$",
+                  "not": {
+                    "pattern": "(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|(?:token|secret|password|credential)[_-]|[A-Fa-f0-9]{32,}|\\d+\\.\\d+\\.\\d+\\.\\d+"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "temperature": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 2
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "seed": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "concurrency": {
+              "const": 1
+            }
+          },
+          "required": [
+            "quantization",
+            "temperature",
+            "seed",
+            "concurrency"
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "modelArtifact",
+        "harnessVersion",
+        "serverVersion",
+        "license",
+        "contextTokens",
+        "hardware"
+      ]
+    },
+    "completeMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*(?:/[A-Za-z][A-Za-z0-9.+_-]*)?$",
+          "not": {
+            "pattern": "^(?:home|Users|private|var|tmp|etc|Volumes)/|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|(?:token|secret|password|credential)[_-]|[A-Fa-f0-9]{32,}|\\d+\\.\\d+\\.\\d+\\.\\d+"
+          }
+        },
+        "modelArtifact": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "harnessVersion": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "serverVersion": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*$"
+        },
+        "contextTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "hardware": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpuCores": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "memoryGiB": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 65536
+            },
+            "gpuCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1024
+            },
+            "gpuMemoryGiB": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "memoryGiB"
+          ]
+        },
+        "serverEngine": {
+          "enum": [
+            "lm-studio",
+            "llama-cpp",
+            "ollama",
+            "vllm",
+            "sglang"
+          ]
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "quantization": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*$",
+              "not": {
+                "pattern": "(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|(?:token|secret|password|credential)[_-]|[A-Fa-f0-9]{32,}|\\d+\\.\\d+\\.\\d+\\.\\d+"
+              }
+            },
+            "temperature": {
+              "const": 0
+            },
+            "seed": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "concurrency": {
+              "const": 1
+            }
+          },
+          "required": [
+            "quantization",
+            "temperature",
+            "seed",
+            "concurrency"
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "modelArtifact",
+        "harnessVersion",
+        "serverVersion",
+        "license",
+        "contextTokens",
+        "hardware",
+        "serverEngine",
+        "settings"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "qualified": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provenance": {
+            "const": "real"
+          },
+          "uncertain": {
+            "const": false
+          },
+          "metadataComplete": {
+            "const": true
+          },
+          "metadata": {
+            "$ref": "#/$defs/completeMetadata"
+          },
+          "failures": {
+            "maxItems": 0
+          },
+          "cases": {
+            "items": {
+              "properties": {
+                "outcome": {
+                  "const": "passed"
+                },
+                "observations": {
+                  "properties": {
+                    "valid": {
+                      "const": true
+                    },
+                    "finalStop": {
+                      "const": true
+                    },
+                    "requirementsMet": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

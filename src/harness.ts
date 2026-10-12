@@ -111,6 +111,16 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
   }
   async run(input: HarnessInput): Promise<HarnessResult> {
+    if (
+      input.temperature !== undefined &&
+      (!Number.isFinite(input.temperature) ||
+        input.temperature < 0 ||
+        input.temperature > 2)
+    )
+      throw new SpillwayError(
+        "invalid_temperature",
+        "Temperature must be finite and between zero and two.",
+      );
     const artifacts = canonicalPath(dirname(input.logPath));
     if (
       within(artifacts, canonicalPath(input.worktree)) ||
@@ -178,7 +188,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
               },
             },
           }
-        : {}),
+        : input.temperature === undefined
+          ? {}
+          : { agent: { build: { temperature: input.temperature } } }),
       provider: {
         spillway: {
           npm: "@ai-sdk/openai-compatible",

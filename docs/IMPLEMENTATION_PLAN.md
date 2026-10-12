@@ -1,6 +1,6 @@
 # Implementation plan and durable state
 
-Updated: 2026-10-12. Scope: Phase 0/1 merged; Phase 2 implemented, locally verified and published in PR #2. Owner initially permitted fixture tests, then supplied a local LM Studio endpoint. Real toy spikes now pass; broader qualification stays pending. Never mark Phase 0 real endpoint gate complete from a fake harness.
+Updated: 2026-10-12. Scope: Phases 0–2 merged; Phase 3 implementation and verification in progress. Owner initially permitted fixture tests, then supplied a local LM Studio endpoint. Real toy spikes now pass; broader qualification stays pending. Never mark Phase 0 real endpoint gate complete from a fake harness.
 
 ## Tasks and ownership
 
@@ -20,7 +20,7 @@ A1/A2/A3 run concurrently with disjoint ownership. Architectural contracts are c
 
 ## Later phases
 
-Phase 2 is the current implementation wave below. Phase 3: JSONL outbox, report/scorecard, sampled audits, sanitized public-only export, qualification suite/community profiles, tested marketplace onboarding, first real accepted report and 0.1.0. Phase 4: measured new hardware qualification/capacity. Phase 5: limit automation, schedules, fallback planner, stacked tasks, extra adapters. Each requires its own tasks and acceptance gates before delegation.
+Phase 3 is the current implementation wave below: JSONL outbox, report/scorecard, sampled audits, sanitized public-only export, qualification suite/community profiles, tested marketplace onboarding, first real accepted report and 0.1.0. Phase 4: measured new hardware qualification/capacity. Phase 5: limit automation, schedules, fallback planner, stacked tasks, extra adapters. Each requires its own tasks and acceptance gates before delegation.
 
 ## Verification ledger
 
@@ -28,7 +28,7 @@ Architecture/spec review complete. Repository origin verified public; initial RE
 
 ## Unresolved decisions
 
-Broader model/profile qualification with artifact hash/license; owner selection of public pilot (use purpose-built disposable sample now); optional hosted permission per repo; audits and scorecard tuning deferred to Phase 3; automatic paid calls excluded by owner decision; remote dashboard opt-in deferred. CLA/directory submission remain owner decisions if needed later.
+Broader model/profile qualification with artifact hash/license; owner selection of public pilot (use purpose-built disposable sample now); optional hosted permission per repo; audit policy and scorecard sample tuning remain operational follow-up; automatic paid calls excluded by owner decision; remote dashboard opt-in deferred. CLA/directory submission remain owner decisions if needed later.
 
 ## Contributions and independent verification
 
@@ -46,7 +46,7 @@ See docs/spikes/real-harness.md. OpenCode 1.19.0 produced a ready verified resul
 
 ## Phase 2 active — 2026-10-12
 
-PR #1 merged to main (1ab2878) at owner request. Owner authorized continuing and selected Claude Code sessions for frontier work; no automatic paid calls. Branch phase-2-review-and-service. P20 architecture/contracts complete; P21 policy/store, P22 read-only review/continuation, and P23 clients/plugin/service implementations and focused tests are complete. P24 controller/API integration and actual macOS background-service/local-model verification are complete. P25 independent review findings are fixed with regressions; full local checks pass. Phase 2 is published in PR #2 (https://github.com/curtiskline/agent-spillway/pull/2); GitHub reports current-head CI status. Exact contracts, responsibilities and acceptance gates are in docs/PHASE2.md. Paid automation and Phase 3–5 are not implemented by this wave.
+PR #1 merged to main (1ab2878) at owner request. Owner authorized continuing and selected Claude Code sessions for frontier work; no automatic paid calls. Branch phase-2-review-and-service. P20 architecture/contracts complete; P21 policy/store, P22 read-only review/continuation, and P23 clients/plugin/service implementations and focused tests are complete. P24 controller/API integration and actual macOS background-service/local-model verification are complete. P25 independent review findings are fixed with regressions; full local checks pass. Phase 2 is published in PR #2 (https://github.com/curtiskline/agent-spillway/pull/2); GitHub reports current-head CI status. Exact contracts, responsibilities and acceptance gates are in docs/PHASE2.md. Paid automation and Phases 3–5 were not implemented by the Phase 2 wave.
 
 
 Phase 2 integration checkpoint: local review, bounded cumulative repair, owner-session frontier claims/reviews, availability/reset state and private service/credential references are implemented. Independent review fixes cover repair transport lineage, availability/data-policy races, ambiguous JSON, missing-report validation, clean-environment home resolution, Linux service restart, frontier dependency ancestry actual changed-path sensitivity, and final-round harness completion evidence. A full integration run passed 236 tests and exposed one same-timestamp ordering failure; stable admission order fixed it, with 56 targeted tests passing. Actual SIGKILL tests now cover surviving reviewer processes as well as workers. No frontier provider calls occurred. Previous private daemon was stopped while idle and config/database backed up before migration. Later gates: actual Linux host lifecycle, live Claude session/marketplace onboarding, artifact/license qualification, scorecards/audits and release.
@@ -60,3 +60,30 @@ Phase 2 integration checkpoint: local review, bounded cumulative repair, owner-s
 - Real local Phase 2 sample: worker commit + clean independent check + separate read-only model review `accept` -> ready. Exact SHA pins match; only source changed, protected check preserved, main unchanged, reviewer checkout removed. Reviewer observed tools: glob/read only. Frontier stayed off; no paid/frontier calls. Sample remains owner-unaccepted. Sanitized observation: docs/spikes/phase2-local-review.md.
 - Earlier same-millisecond ordering failure was fixed with durable admission order and frozen-time restart regression. Unknown worker/reviewer execution globally fences inference until explicit owner reconciliation. Actual SIGKILL recovery tests cover both kinds.
 - Remaining work: Phase 3 evidence outbox/scorecards/audits/public-only exports, broader artifact/license/profile qualification, live owner Claude-session/marketplace onboarding, actual Linux host validation and release. None is claimed complete by toy samples.
+
+
+## Phase 3 active — 2026-10-12
+
+PR #2 merged to main 079478a at owner request. Phase 3 design/contracts in docs/PHASE3.md, branch phase-3-evidence-and-audits. Q30 architecture/contracts established before delegation; Q31 store/outbox, Q32 report/export, Q33 qualification/eval/onboarding run concurrently with disjoint ownership. Q34 root integration and Q35 independent review follow. Owner supplied private metadata, normalized outside Git with artifact hash/license verification. The real local qualification run is in progress; the owner is increasing loaded context to 32,768, so the original run and subsequent stable-context run must retain separate provenance. Real owner acceptance, live Claude onboarding and release remain gated.
+
+
+### Phase 3 implementation checkpoint
+
+| Task | Status / ownership | Deliverables and verification |
+| --- | --- | --- |
+| Q30 | Complete, orchestrator | Architecture, v4 contracts, dependency/ownership plan established before implementation; ADR 0007 consolidates decisions. |
+| Q31 | Complete, queue agent + central review | SQLite migration, atomic decisions/audits/planning/job records, transactional outbox, fsynced exact-prefix JSONL delivery, recovery and no-op polling tests. |
+| Q32 | Complete, execution agent + central review | Pure scorecard with explicit coverage/small samples; anonymous public-only export with opt-in and historical identity checks; privacy/unit tests. |
+| Q33 | Complete implementation, clients agent | Seven Apache-2.0 fixed workloads, observed-tool evidence, qualification/community schemas, isolated package onboarding; fixtures cannot qualify. Real qualification recorded separately below. |
+| Q34 | Complete implementation, orchestrator | Authenticated HTTP/CLI, read-only scorecard/audit/endpoint views, shared inference/job fences, private result durability, package/CI/plugin integration. |
+| Q35 | Review complete; publication in progress | Independent security agent reproduced numeric overflow, metadata/observed-tool/privacy gaps, hardlink and malformed-input risks; fixes have regressions. Additional agents supplied real fixture integration and actual SIGKILL qualification recovery tests. |
+
+Meaningful integration covers owner minutes and audit sampling, policy/availability holds, immutable audit SHA after branch deletion, private export denial, evidence tamper/replay, role usage/legacy unknowns, qualification admission and interruption fencing, and CLI/browser authentication. No paid provider calls occurred. Local dependency audit reports zero vulnerabilities. Isolated source/package onboarding exercises installation, CLI, five MCP tools, plugin structure and bundled workload assets without account credentials or OS service-manager calls.
+
+Private macOS service migration: stopped idle Phase 2 service, backed up config/database outside Git, installed packaged Phase 3 build, restarted launchd and preserved two ready, unaccepted sample tasks. SQLite migration and JSONL delivery succeeded. Exact model artifact SHA-256 was matched to public upstream LFS metadata and license; server/hardware details came from the owner's private file. A real seven-case run began at 8,192 loaded tokens; owner subsequently reloaded at 32,768. That run is annotated privately as settings-changed and is observational, not reproducible qualification. The first run completed without uncertainty: four failed and three timed out. Early step usage reached the 8,192-token ceiling with length finishes. A fresh stable-context run remains separate. No public community profile or class promotion is inferred from these runs.
+
+Remaining release gates: successful real qualification with stable metadata/settings, actual owner-accepted pilot report, authorized live Claude audit/session and marketplace installation, actual Linux user-service onboarding, and explicit release/publication decision. Implementation checks do not substitute for those gates. No 0.1.0 tag or npm release has been created.
+
+Verification checkpoint: `npm run check` passes 373 tests across 30 files, strict typecheck/lint/build. The additional actual graceful-background-shutdown regression passes separately (374 total tests across 31 files); it landed after the full run began. Isolated package/CLI/MCP/plugin onboarding and community validation pass; zero community profiles are published. Independent async qualification review found no remaining actionable defects. Long requests exposed a client headers timeout while execution continued correctly; the CLI now returns a durable background-job receipt and offers `qualify show` for bounded private result inspection. Pre-admission errors create no job; post-admission failures retain uncertainty. New regressions cover disconnect-independent execution, shared slot, failure consumption, corrupt/linked/oversized result files and child termination before database closure.
+
+Stable-context follow-up: after the old job completed, the idle launchd service was backed up and upgraded to the verified package with background admission/result inspection. Two ready unaccepted tasks and JSONL prefix survived, pending delivery zero and frontier off. A fresh 32,768-context real run was admitted in 93 ms using separate private metadata; outcomes pending. See docs/spikes/phase3-qualification.md for sanitized observations.

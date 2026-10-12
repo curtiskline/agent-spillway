@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, statSync, symlinkSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, symlinkSync, mkdirSync, linkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -189,7 +189,7 @@ describe("durable transactional queue", () => {
         )
         .run("missing", "event", "{}", "now"),
     ).toThrow(/FOREIGN KEY/);
-    expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(3);
+    expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(4);
     db.close();
   });
   it("refuses data in a Git checkout or symlinked database", () => {
@@ -267,7 +267,7 @@ describe("durable transactional queue", () => {
     store.addTask(spec(), "raw", "fixture", "local");
     store.close();
     const db = new DatabaseSync(join(root, "data", "queue.sqlite"));
-    db.exec("DROP TABLE reviews; DROP TABLE settings; DROP TABLE setting_events; DROP TABLE controller_lease; ALTER TABLE tasks DROP COLUMN next_action; ALTER TABLE attempts DROP COLUMN kind; ALTER TABLE attempts DROP COLUMN parent_attempt_id; PRAGMA user_version=1;");
+    db.exec("DROP TABLE evidence_outbox; DROP TABLE qualification_jobs; DROP TABLE audits; DROP TABLE decisions; DROP TABLE planning_usage; ALTER TABLE tasks DROP COLUMN origin; ALTER TABLE tasks DROP COLUMN ready_at; ALTER TABLE tasks DROP COLUMN completed_frontier_off; ALTER TABLE tasks DROP COLUMN policy_snapshot; DROP TABLE reviews; DROP TABLE settings; DROP TABLE setting_events; DROP TABLE controller_lease; ALTER TABLE tasks DROP COLUMN next_action; ALTER TABLE attempts DROP COLUMN kind; ALTER TABLE attempts DROP COLUMN parent_attempt_id; PRAGMA user_version=1;");
     db.close();
     store = new Store(join(root, "data"));
     expect(store.getTask("fix-one")?.state).toBe("queued");
@@ -438,7 +438,7 @@ describe('v3 migrations preserve legacy evidence', () => {
     const interrupted = store.createAttempt(attempt('interrupted')); store.recoverInflight();
     const pendingBefore = store.getAttempt(pending.id); const rejectedBefore = store.getAttempt(rejected.id); const interruptedBefore = store.getAttempt(interrupted.id);
     store.close(); const db = new DatabaseSync(join(root,'data','queue.sqlite'));
-    db.exec('DROP TABLE reviews; DROP TABLE settings; DROP TABLE setting_events; ALTER TABLE tasks DROP COLUMN next_action; ALTER TABLE attempts DROP COLUMN kind; ALTER TABLE attempts DROP COLUMN parent_attempt_id; PRAGMA user_version=2;'); db.close();
+    db.exec('DROP TABLE evidence_outbox; DROP TABLE qualification_jobs; DROP TABLE audits; DROP TABLE decisions; DROP TABLE planning_usage; ALTER TABLE tasks DROP COLUMN origin; ALTER TABLE tasks DROP COLUMN ready_at; ALTER TABLE tasks DROP COLUMN completed_frontier_off; ALTER TABLE tasks DROP COLUMN policy_snapshot; DROP TABLE reviews; DROP TABLE settings; DROP TABLE setting_events; ALTER TABLE tasks DROP COLUMN next_action; ALTER TABLE attempts DROP COLUMN kind; ALTER TABLE attempts DROP COLUMN parent_attempt_id; PRAGMA user_version=2;'); db.close();
     store = new Store(join(root,'data'));
     expect(store.getTask('pending')?.nextAction).toBe('review'); expect(store.getTask('queued')?.nextAction).toBe('worker');
     expect(store.getTask('rejected')?.nextAction).toBeNull(); expect(store.getTask('interrupted')?.nextAction).toBeNull();
@@ -487,4 +487,125 @@ it("preserves admission order for same-millisecond tasks across restart", () => 
     store = new Store(join(root, "data"));
     expect(store.listTasks().map((task) => task.id)).toEqual(["z-first", "a-second"]);
   } finally { vi.useRealTimers(); }
+});
+
+function readyDecisionTask(id = 'decision-task', tier: 'checks-only' | 'local' | 'frontier' = 'checks-only', origin: 'ordinary' | 'qualification' = 'ordinary') {
+  store.addTask(spec(id),'raw','fixture',tier,{ origin });
+  const a = store.createAttempt(attempt(id)); store.setTaskState(id,'verifying');
+  store.finalizeAttempt(a.id,{ outcome: 'completed',resultSha,verification: { passed: true,resultSha,changedPaths: [],flags: [],checks: [] } },tier === 'checks-only' ? 'ready' : 'held');
+  if (tier !== 'checks-only') {
+    const review = store.createReview({ ...reviewInput(id),tier,source: tier === 'local' ? 'service-local' : 'owner-session' });
+    store.finishReview(review.id,{ outcome: 'completed',report: acceptedReport() },'ready',null);
+  }
+  return a;
+}
+
+describe('phase three immutable decisions, audits and evidence', () => {
+  it('records observed readiness availability and admission policy copies', async () => {
+    const { defaultPolicy } = await import('../src/policy.js'); const policy = defaultPolicy();
+    store.addTask(spec('snapshot'),'raw','fixture','local',{ origin: 'qualification',policySnapshot: policy }); policy.max_repairs = 0;
+    expect(store.getTask('snapshot')?.policySnapshot?.max_repairs).toBe(1); expect(store.getTask('snapshot')?.origin).toBe('qualification');
+    readyDecisionTask('off'); expect(store.getTask('off')?.completedWhileFrontierOff).toBe(true); expect(store.getTask('off')?.readyAt).not.toBeNull();
+    store.setFrontierState(true); readyDecisionTask('on'); expect(store.getTask('on')?.completedWhileFrontierOff).toBe(false);
+  });
+  it('atomically records owner minutes, decision, state, audit selection and immutable evidence', () => {
+    const a = readyDecisionTask(); const before = store.listEvidence().length;
+    const decision = store.recordDecision('decision-task','accepted',resultSha,3.5,true);
+    expect(decision).toMatchObject({ decision: 'accepted',ownerMinutes: 3.5,resultSha,reviewTier: 'checks-only' });
+    expect(store.getTask('decision-task')?.state).toBe('accepted'); expect(store.listAudits()).toHaveLength(1); expect(store.listAudits()[0]?.attemptId).toBe(a.id);
+    expect(store.listEvidence().length).toBeGreaterThan(before); expect(store.listEvidence().at(-1)?.kind).toBe('owner-decision');
+    expect(() => store.recordDecision('decision-task','rejected',resultSha,null,false)).toThrow(/undecided ready/);
+    expect(store.getDecision('decision-task')).toEqual(decision);
+  });
+  it('keeps rejected, frontier and qualification decisions out of ordinary audit selection', () => {
+    readyDecisionTask('rejected'); store.recordDecision('rejected','rejected',resultSha,null,true);
+    readyDecisionTask('frontier','frontier'); store.recordDecision('frontier','accepted',resultSha,0,true);
+    readyDecisionTask('qualification','local','qualification'); store.recordDecision('qualification','accepted',resultSha,null,true);
+    expect(store.listDecisions()).toHaveLength(3); expect(store.listAudits()).toEqual([]);
+  });
+  it('rejects stale SHA, unready state, missing required review and invalid usage/minutes without outbox writes', () => {
+    readyDecisionTask(); const before = store.evidenceCounts();
+    expect(() => store.recordDecision('decision-task','accepted','c'.repeat(40),null,true)).toThrow(/verified result/);
+    expect(() => store.recordDecision('decision-task','accepted',resultSha,-1,true)).toThrow();
+    expect(store.evidenceCounts()).toEqual(before); expect(store.listDecisions()).toEqual([]); expect(store.listAudits()).toEqual([]);
+    store.addTask(spec('unready'),'raw','fixture','local'); expect(() => store.recordDecision('unready','accepted',resultSha,null,false)).toThrow(/ready/);
+    store.setTaskReview('decision-task','local'); expect(() => store.recordDecision('decision-task','accepted',resultSha,null,false)).toThrow(/required review/);
+  });
+  it('rolls back partially inserted decision/audit/evidence if finalization fails', () => {
+    readyDecisionTask(); const before = store.evidenceCounts(); const original = store.setTaskAction.bind(store);
+    const failure = vi.spyOn(store,'setTaskAction').mockImplementation(() => { throw new Error('fixture interruption'); });
+    expect(() => store.recordDecision('decision-task','accepted',resultSha,null,true)).toThrow(/fixture interruption/); failure.mockImplementation(original); failure.mockRestore();
+    expect(store.getTask('decision-task')?.state).toBe('ready'); expect(store.listDecisions()).toEqual([]); expect(store.listAudits()).toEqual([]); expect(store.evidenceCounts()).toEqual(before);
+  });
+  it('finishes selected audits once without rewriting accepted task or decision', () => {
+    readyDecisionTask(); const decision = store.recordDecision('decision-task','accepted',resultSha,2,true); const task = store.getTask('decision-task'); const audit = store.listAudits()[0]!;
+    expect(() => store.finishAudit(audit.id,{ ...acceptedReport(),resultSha: 'c'.repeat(40) })).toThrow(/immutable accepted/);
+    expect(() => store.finishAudit(audit.id,{ ...acceptedReport(),findings: [{ severity: 'blocking',message: 'Missing boundary' }] })).toThrow(/blocking/);
+    const completed = store.finishAudit(audit.id,{ resultSha,verdict: 'needs-repair',findings: [{ severity: 'blocking',message: 'Boundary bug' }] },{ model: 'owner-attested',usage: { costUsd: 0 } });
+    expect(completed.status).toBe('completed'); expect(completed.report?.verdict).toBe('needs-repair'); expect(store.getTask('decision-task')).toEqual(task); expect(store.getDecision('decision-task')).toEqual(decision);
+    expect(() => store.finishAudit(audit.id,acceptedReport())).toThrow(/cannot be rewritten/);
+  });
+  it('retains pending audits when frontier is off and explicit missing planning fields', () => {
+    readyDecisionTask(); store.recordDecision('decision-task','accepted',resultSha,null,true); expect(store.getFrontierState().available).toBe(false); expect(store.listAudits()[0]?.status).toBe('pending');
+    const planning = store.addPlanningUsage('decision-task',{ inputTokens: 0 }); expect(planning.usage).toEqual({ inputTokens: 0 });
+    expect(() => store.addPlanningUsage('decision-task',{})).toThrow(/at least one/); expect(() => store.addPlanningUsage('decision-task',{ outputTokens: -1 })).toThrow();
+    const snapshot = store.reportSnapshot(); expect(snapshot.planning).toEqual([planning]); expect(snapshot.tasks[0]?.events.length).toBeGreaterThan(0); expect(snapshot.audits).toEqual(store.listAudits());
+    snapshot.tasks[0]!.task.spec.scope.push('changed-copy'); expect(store.getTask('decision-task')!.spec.scope).not.toContain('changed-copy');
+  });
+  it('requires existing acknowledgement prefixes and retains immutable snapshots across updates', () => {
+    store.addTask(spec(),'raw','fixture','local'); const old = store.listEvidence(); store.setTaskState('fix-one','queued','New private reason');
+    expect(store.listEvidence().slice(0,old.length)).toEqual(old); expect(() => store.acknowledgeEvidence(999999)).toThrow(/existing evidence prefix/);
+    store.acknowledgeEvidence(old.at(-1)!.id); expect(store.evidenceCounts().delivered).toBe(old.length); expect(store.evidenceCounts().pending).toBe(1);
+  });
+  it('backfills v3 tasks/settings once with unknown historical readiness and no invented decisions', () => {
+    readyDecisionTask(); store.close(); const db = new DatabaseSync(join(root,'data','queue.sqlite'));
+    db.exec('DROP TABLE evidence_outbox; DROP TABLE qualification_jobs; DROP TABLE audits; DROP TABLE decisions; DROP TABLE planning_usage; ALTER TABLE tasks DROP COLUMN origin; ALTER TABLE tasks DROP COLUMN ready_at; ALTER TABLE tasks DROP COLUMN completed_frontier_off; ALTER TABLE tasks DROP COLUMN policy_snapshot; ALTER TABLE reviews DROP COLUMN model_artifact; ALTER TABLE reviews DROP COLUMN harness; ALTER TABLE reviews DROP COLUMN harness_version; PRAGMA user_version=3;'); db.close();
+    store = new Store(join(root,'data')); const evidence = store.listEvidence(); expect(evidence.map(row => row.provenance)).toEqual(['legacy-snapshot','legacy-snapshot']);
+    expect(store.getTask('decision-task')).toMatchObject({ state: 'ready',readyAt: null,completedWhileFrontierOff: null,policySnapshot: null }); expect(store.listDecisions()).toEqual([]);
+    store.close(); store = new Store(join(root,'data')); expect(store.listEvidence()).toEqual(evidence);
+  });
+});
+
+describe('qualification crash-safe shared fences', () => {
+  const jobInput = (id = 'qualification-job') => ({ id,profileId: 'fixture',root: join(root,'data','qualification',id) });
+  it('persists jobs before inference and serializes them with task workers/reviews', () => {
+    const job = store.createQualificationJob(jobInput()); expect(job.status).toBe('running'); store.addTask(spec(),'raw','fixture','local');
+    expect(() => store.createAttempt(attempt())).toThrow(/already active/); expect(() => store.createQualificationJob(jobInput('another'))).toThrow(/already active/);
+    store.finishQualificationJob(job.id,'completed',join(job.root,'result.json')); expect(store.getQualificationJob(job.id)?.status).toBe('completed');
+    expect(() => store.finishQualificationJob(job.id,'failed')).toThrow(/cannot be rewritten/); expect(store.createAttempt(attempt()).outcome).toBe('running');
+  });
+  it('marks interrupted jobs uncertain and preserves them through owner-stop reconciliation', () => {
+    const job = store.createQualificationJob(jobInput()); store.close(); store = new Store(join(root,'data')); expect(store.recoverInflight()).toEqual([]);
+    const uncertain = store.getQualificationJob(job.id)!; expect(uncertain.status).toBe('uncertain'); expect(store.hasUnresolvedExecution()).toBe(true);
+    expect(() => store.createQualificationJob(jobInput('another'))).toThrow(/reconciliation/);
+    store.reconcileQualificationJob(job.id); expect(store.getQualificationJob(job.id)).toMatchObject({ ...uncertain,reconciledAt: expect.any(String) }); expect(store.hasUnresolvedExecution()).toBe(false);
+    expect(() => store.reconcileQualificationJob(job.id)).toThrow(/unreconciled/); expect(store.listEvidence().at(-1)?.kind).toBe('qualification-reconciled');
+  });
+  it('rejects roots/result paths outside private ownership and waits for an active worker', () => {
+    expect(() => store.createQualificationJob({ ...jobInput(),root })).toThrow(/inside the private/); store.addTask(spec(),'raw','fixture','local'); const a = store.createAttempt(attempt());
+    expect(() => store.createQualificationJob(jobInput())).toThrow(/already active/); store.finalizeAttempt(a.id,{ outcome: 'failed' },'held');
+    const job = store.createQualificationJob(jobInput()); expect(() => store.finishQualificationJob(job.id,'completed',join(root,'escape.json'))).toThrow(/inside its private/);
+    expect(store.getQualificationJob(job.id)?.status).toBe('running');
+  });
+});
+
+it("refuses a queue database hard-linked outside private storage", () => {
+  store.close();
+  const alias=join(root,"public-alias.sqlite");
+  linkSync(join(root,"data","queue.sqlite"),alias);
+  expect(() => new Store(join(root,"data"))).toThrow("Queue database");
+  rmSync(alias);
+  store=new Store(join(root,"data"));
+});
+
+it("deduplicates unchanged holds and review tiers without losing changed reasons", () => {
+  store.addTask(spec(),"fixture","fixture","frontier");
+  store.setTaskAction("fix-one","held","frontier-worker","Waiting","frontier");
+  const count=store.listEvidence().length;
+  const eventCount=store.listEvents("fix-one").length;
+  for (let index=0;index<5;index++) {store.setTaskAction("fix-one","held","frontier-worker","Waiting","frontier");store.setTaskReview("fix-one","frontier");}
+  expect(store.listEvidence()).toHaveLength(count);
+  expect(store.listEvents("fix-one")).toHaveLength(eventCount);
+  store.setTaskAction("fix-one","held","frontier-worker","Policy changed","frontier");
+  expect(store.listEvidence()).toHaveLength(count+1);
 });

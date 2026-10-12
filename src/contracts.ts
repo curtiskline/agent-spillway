@@ -16,12 +16,7 @@ export const TASK_STATES = [
 ] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 export type TaskClass =
-  | "tests"
-  | "small-fix"
-  | "mechanical"
-  | "small-feature"
-  | "risky"
-  | "design";
+  "tests" | "small-fix" | "mechanical" | "small-feature" | "risky" | "design";
 export type ReviewTier = "checks-only" | "local" | "frontier";
 export type DataPolicy = "local-only" | "open-weight-hosted-ok" | "frontier-ok";
 export interface TaskSpec {
@@ -58,6 +53,7 @@ export interface ModelProfile {
 export interface RepositoryConfig {
   path: string;
   data_policy: DataPolicy;
+  publication?: { public_url: string };
 }
 export interface SpillwayConfig {
   version: 1;
@@ -71,6 +67,7 @@ export interface SpillwayConfig {
   allow_checks_only: boolean;
   policy?: PolicyConfig;
   review_profile?: string;
+  audit_rate?: number;
 }
 export interface ClassPolicy {
   local_eligible: boolean;
@@ -99,6 +96,10 @@ export interface TaskRecord {
   createdAt: string;
   updatedAt: string;
   nextAction?: NextAction | null;
+  origin?: "ordinary" | "qualification";
+  readyAt?: string | null;
+  completedWhileFrontierOff?: boolean | null;
+  policySnapshot?: PolicyConfig | null;
 }
 export interface Usage {
   inputTokens?: number;
@@ -197,6 +198,7 @@ export interface HarnessInput {
   logPath: string;
   signal?: AbortSignal;
   purpose?: "worker" | "review";
+  temperature?: number;
 }
 export interface HarnessResult {
   exit: "completed" | "failed" | "timeout" | "transport_error";
@@ -263,6 +265,7 @@ export interface TaskDetail {
   attempts: AttemptRecord[];
   events: EventRecord[];
   reviews?: ReviewRecord[];
+  audits?: AuditRecord[];
 }
 export interface ReviewFinding {
   severity: "blocking" | "warning";
@@ -275,6 +278,9 @@ export interface ReviewReport {
   findings: ReviewFinding[];
 }
 export interface ReviewRecord {
+  modelArtifact?: string | null;
+  harness?: string | null;
+  harnessVersion?: string | null;
   id: number;
   taskId: string;
   attemptId: number;
@@ -292,6 +298,9 @@ export interface ReviewRecord {
   reason: string | null;
 }
 export interface NewReview {
+  modelArtifact?: string;
+  harness?: string;
+  harnessVersion?: string;
   taskId: string;
   attemptId: number;
   tier: "local" | "frontier";
@@ -326,6 +335,69 @@ export interface LocalReviewResult {
   usage?: Usage;
   reason?: string;
   logPath: string;
+}
+export interface TaskAdmission {
+  origin?: "ordinary" | "qualification";
+  policySnapshot?: PolicyConfig;
+}
+export interface DecisionRecord {
+  taskId: string;
+  decision: "accepted" | "rejected";
+  resultSha: string;
+  reviewTier: ReviewTier;
+  ownerMinutes: number | null;
+  decidedAt: string;
+}
+export interface AuditRecord {
+  id: number;
+  taskId: string;
+  attemptId: number;
+  resultSha: string;
+  reviewTier: "checks-only" | "local";
+  status: "pending" | "completed";
+  report: ReviewReport | null;
+  model: string | null;
+  usage: Usage | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+export interface PlanningUsageRecord {
+  id: number;
+  taskId: string;
+  usage: Usage;
+  createdAt: string;
+}
+export interface EvidenceRecord {
+  version: 1;
+  id: number;
+  kind: string;
+  taskId: string | null;
+  createdAt: string;
+  provenance: "service" | "legacy-snapshot";
+  data: unknown;
+}
+export interface EvidenceStatus {
+  pending: number;
+  delivered: number;
+  lastError: string | null;
+}
+export interface ReportSnapshot {
+  tasks: TaskDetail[];
+  decisions: DecisionRecord[];
+  audits: AuditRecord[];
+  planning: PlanningUsageRecord[];
+  generatedAt: string;
+}
+export interface QualificationJobRecord {
+  id: string;
+  profileId: string;
+  root: string;
+  status: "running" | "completed" | "failed" | "uncertain";
+  startedAt: string;
+  endedAt: string | null;
+  resultPath: string | null;
+  reason: string | null;
+  reconciledAt: string | null;
 }
 export interface ServiceDescriptor {
   protocol: number;

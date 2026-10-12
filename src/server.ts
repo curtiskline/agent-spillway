@@ -27,6 +27,10 @@ import {
 import { Store } from "./store.js";
 import { Controller } from "./controller.js";
 import { parseStrictJson } from "./json.js";
+import { flushEvidence } from "./evidence.js";
+import { buildScorecard, type Scorecard } from "./report.js";
+import { exportSanitized } from "./export.js";
+import type { EvidenceStatus } from "./contracts.js";
 
 export interface ServiceHandle {
   url: string;
@@ -45,7 +49,10 @@ const taskInput = z
   })
   .strict();
 const decisionInput = z
-  .object({ decision: z.enum(["accepted", "rejected"]) })
+  .object({
+    decision: z.enum(["accepted", "rejected"]),
+    ownerMinutes: z.number().finite().min(0).max(1000000).optional(),
+  })
   .strict();
 const reconcileInput = z.object({ worker_stopped: z.literal(true) }).strict();
 const frontierInput = z
@@ -56,9 +63,9 @@ const frontierInput = z
   .strict();
 const usageInput = z
   .object({
-    inputTokens: z.number().int().nonnegative().optional(),
-    outputTokens: z.number().int().nonnegative().optional(),
-    costUsd: z.number().nonnegative().optional(),
+    inputTokens: z.number().finite().int().nonnegative().optional(),
+    outputTokens: z.number().finite().int().nonnegative().optional(),
+    costUsd: z.number().finite().nonnegative().optional(),
   })
   .strict();
 const reviewInput = z
@@ -70,8 +77,29 @@ const reviewInput = z
     usage: usageInput.optional(),
   })
   .strict();
+const planningInput = z
+  .object({
+    usage: usageInput.refine(
+      (value) => Object.keys(value).length > 0,
+      "Reported usage is required",
+    ),
+  })
+  .strict();
+const exportInput = z
+  .object({
+    publicUrl: z.string().min(1).max(300),
+    manifest: z.unknown().optional(),
+  })
+  .strict();
+const qualifyInput = z
+  .object({
+    profileId: idSchema,
+    metadata: z.unknown().optional(),
+    background: z.boolean().optional(),
+  })
+  .strict();
 const completeInput = z
-  .object({ attemptId: z.number().int().positive() })
+  .object({ attemptId: z.number().finite().int().positive() })
   .strict();
 function escapeHtml(value: unknown): string {
   return String(value).replace(
@@ -106,7 +134,37 @@ async function body(req: IncomingMessage): Promise<unknown> {
   }
 }
 function page(title: string, content: string, prefix = "/"): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Agent Spillway</title><style>body{font:16px system-ui;max-width:1100px;margin:3rem auto;padding:0 1rem;background:#f6f7f8;color:#18222d}a{color:#176198}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:.8rem;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:1rem;border:1px solid #ddd}small{color:#536171}h1{letter-spacing:-.04em}.state{font-family:monospace}</style></head><body><nav><a href="${prefix}">Agent Spillway</a> · local read-only dashboard</nav><h1>${escapeHtml(title)}</h1>${content}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Agent Spillway</title><style>body{font:16px system-ui;max-width:1100px;margin:3rem auto;padding:0 1rem;background:#f6f7f8;color:#18222d}a{color:#176198}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:.8rem;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:1rem;border:1px solid #ddd}small{color:#536171}h1{letter-spacing:-.04em}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem}.card{background:white;padding:1.3rem;border:1px solid #ddd;border-radius:8px}.card strong{display:block;font-size:2rem}.bar{height:8px;background:#e5e9ed;border-radius:4px;overflow:hidden;margin-top:6px}.fill{height:100%;background:#25855a}.note{padding:1rem;background:#fff3d8;border-radius:8px}nav{line-height:2}.state{font-family:monospace}</style></head><body><nav><a href="${prefix}">Agent Spillway</a> · <a href="${prefix}scorecard">Scorecard</a> · <a href="${prefix}audits">Audits</a> · <a href="${prefix}endpoints">Endpoints</a> · read-only</nav><h1>${escapeHtml(title)}</h1>${content}</body></html>`;
+}
+function scorecardMarkup(score: Scorecard): string {
+  const counts = score.tasks;
+  const cards = [
+    ["Accepted", counts.accepted],
+    ["Awaiting decision", counts.undecided],
+    ["Rejected", counts.rejected],
+    ["Pending audits", score.audits.pending],
+  ]
+    .map(
+      ([label, count]) =>
+        `<div class="card"><small>${escapeHtml(label)}</small><strong>${escapeHtml(count)}</strong></div>`,
+    )
+    .join("");
+  const groups = (values: typeof score.tasks.byClass) =>
+    Object.entries(values)
+      .map(
+        ([label, value]) =>
+          `<tr><td>${escapeHtml(label)}</td><td>${value.accepted}<div class="bar"><div class="fill" style="width:${value.total ? Math.max(0, Math.min(100, (value.accepted / value.total) * 100)) : 0}%"></div></div></td><td>${value.rejected}</td><td>${value.undecided}</td><td>${value.total}</td></tr>`,
+      )
+      .join("");
+  const header =
+    "<thead><tr><th>Group</th><th>Accepted</th><th>Rejected</th><th>Undecided</th><th>Total</th></tr></thead>";
+  const usage = Object.entries(score.usage)
+    .map(
+      ([role, value]) =>
+        `<tr><td>${escapeHtml(role)}</td><td>${value.inputTokens.total} <small>(${value.inputTokens.known} known, ${value.inputTokens.missing} missing)</small></td><td>${value.outputTokens.total} <small>(${value.outputTokens.known} known, ${value.outputTokens.missing} missing)</small></td><td>${value.costUsd.known ? "$" + value.costUsd.total.toFixed(4) : "Unknown"} <small>(${value.costUsd.missing} missing)</small></td></tr>`,
+    )
+    .join("");
+  return `<div class="cards">${cards}</div><p>${counts.acceptedWhileFrontierOff.yes} accepted tasks completed while frontier was off; ${counts.acceptedWhileFrontierOff.unknown} have unknown historical availability.</p><p>${score.attempts.tasksRepaired} tasks repaired; ${score.attempts.escalationExecutions} frontier executions. Audits: ${score.audits.misses} misses among ${score.audits.completed} completed (${score.audits.selected} selected).</p><h2>By class</h2><table>${header}<tbody>${groups(counts.byClass)}</tbody></table><h2>By profile</h2><table>${header}<tbody>${groups(counts.byProfile)}</tbody></table><h2>Reported usage across local and owner-session work</h2><table><thead><tr><th>Role</th><th>Input tokens</th><th>Output tokens</th><th>Reported cost</th></tr></thead><tbody>${usage}</tbody></table><p><small>Missing usage is unknown. Small samples remain counts; rates require 20 observations. Qualification tasks are excluded (${score.qualificationExcluded}). These results do not establish quota savings without a baseline.</small></p><p>Owner time: ${score.ownerMinutes.total} reported minutes; ${score.ownerMinutes.missing} missing.</p>`;
 }
 export async function startService(
   config: SpillwayConfig,
@@ -137,12 +195,39 @@ export async function startService(
   let timer: ReturnType<typeof setInterval> | undefined;
   let closing = false;
   let running: Promise<string | null> | undefined;
+  const qualificationRuns = new Set<Promise<void>>();
+  let evidenceStatus: EvidenceStatus = {
+    ...store.evidenceCounts(),
+    lastError: null,
+  };
+  let flushing: Promise<EvidenceStatus> | undefined;
+  const syncEvidence = (): Promise<EvidenceStatus> => {
+    if (flushing) return flushing;
+    flushing = flushEvidence(store, config.data_dir)
+      .then((status) => {
+        evidenceStatus = status;
+        return status;
+      })
+      .catch(() => {
+        evidenceStatus = {
+          ...store.evidenceCounts(),
+          lastError:
+            "Evidence synchronization failed; SQLite records remain durable.",
+        };
+        return evidenceStatus;
+      })
+      .finally(() => {
+        flushing = undefined;
+      });
+    return flushing;
+  };
   const dispatch = (): Promise<string | null> => {
     if (closing) return Promise.resolve(null);
     if (running)
       throw new SpillwayError("BUSY", "A dispatch is already running.", 409);
     running = controller.runOnce().finally(() => {
       running = undefined;
+      void syncEvidence();
     });
     return running;
   };
@@ -283,6 +368,7 @@ export async function startService(
     if (!authorized)
       throw new SpillwayError("UNAUTHORIZED", "Authentication required.", 401);
     const json = (data: unknown, status = 200) => {
+      void syncEvidence();
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ data }));
     };
@@ -295,12 +381,131 @@ export async function startService(
         protocol: PROTOCOL,
         running:
           !!running ||
+          controller.isBusy() ||
           Object.keys(counts).some((state) =>
             ["dispatched", "verifying", "reviewing"].includes(state),
           ),
         counts,
         frontier: store.getFrontierState(),
+        evidence: {
+          ...store.evidenceCounts(),
+          lastError: evidenceStatus.lastError,
+        },
+        audits: {
+          pending: store
+            .listAudits()
+            .filter((audit) => audit.status === "pending").length,
+        },
       });
+      return;
+    }
+    if (req.method === "GET" && path === "/api/v1/report") {
+      json(buildScorecard(store.reportSnapshot()));
+      return;
+    }
+    if (
+      (req.method === "GET" && path === "/api/v1/evidence") ||
+      (req.method === "POST" && path === "/api/v1/evidence/sync")
+    ) {
+      json(await syncEvidence());
+      return;
+    }
+    if (req.method === "GET" && path === "/api/v1/endpoints") {
+      json(await controller.endpointHealth());
+      return;
+    }
+    if (req.method === "GET" && path === "/api/v1/audits") {
+      json(
+        store.listAudits().map((audit) => ({
+          ...audit,
+          held:
+            audit.status === "pending" &&
+            (!store.getFrontierState().available ||
+              !config.repositories.some(
+                (repo) =>
+                  repo.path ===
+                    controller.getDetail(audit.taskId).task.spec.repo &&
+                  repo.data_policy === "frontier-ok",
+              )),
+        })),
+      );
+      return;
+    }
+    const auditPath = path.match(/^\/api\/v1\/audits\/(\d+)\/(packet|report)$/);
+    if (auditPath && req.method === "GET" && auditPath[2] === "packet") {
+      json(await controller.getAuditPacket(Number(auditPath[1])));
+      return;
+    }
+    if (auditPath && req.method === "POST" && auditPath[2] === "report") {
+      const input = reviewInput.parse(await body(req));
+      json(
+        await controller.submitAudit(Number(auditPath[1]), input.report, {
+          model: input.model,
+          usage: input.usage,
+        }),
+      );
+      return;
+    }
+    if (req.method === "POST" && path === "/api/v1/export") {
+      const input = exportInput.parse(await body(req));
+      json(
+        await exportSanitized({
+          snapshot: store.reportSnapshot(),
+          config,
+          publicUrl: input.publicUrl,
+          manifest: input.manifest,
+        }),
+      );
+      return;
+    }
+    if (req.method === "GET" && path === "/api/v1/qualifications") {
+      json(store.listQualificationJobs());
+      return;
+    }
+    const qualificationPath = path.match(
+      /^\/api\/v1\/qualifications\/([a-z0-9-]+)$/,
+    );
+    if (req.method === "GET" && qualificationPath) {
+      json(
+        await controller.qualificationDetail(idSchema.parse(qualificationPath[1])),
+      );
+      return;
+    }
+    const jobPath = path.match(
+      /^\/api\/v1\/qualifications\/([a-z0-9-]+)\/reconcile$/,
+    );
+    if (req.method === "POST" && jobPath) {
+      reconcileInput.parse(await body(req));
+      store.reconcileQualificationJob(idSchema.parse(jobPath[1]));
+      json(store.getQualificationJob(jobPath[1]!));
+      return;
+    }
+    if (req.method === "POST" && path === "/api/v1/qualify") {
+      const input = qualifyInput.parse(await body(req));
+      if (!input.background) {
+        json(await controller.qualify(input.profileId, input.metadata));
+      } else {
+        // Acknowledgement follows durable admission, never subprocess completion.
+        let admit!: (job: ReturnType<Store["createQualificationJob"]>) => void;
+        let deny!: (error: unknown) => void;
+        const admitted = new Promise<ReturnType<Store["createQualificationJob"]>>(
+          (resolve, reject) => {
+            admit = resolve;
+            deny = reject;
+          },
+        );
+        const execution = controller
+          .qualify(input.profileId, input.metadata, admit)
+          .then(() => {}, (error: unknown) => {
+            deny(error);
+          })
+          .finally(() => {
+            qualificationRuns.delete(execution);
+            void syncEvidence();
+          });
+        qualificationRuns.add(execution);
+        json({ job: await admitted }, 202);
+      }
       return;
     }
     if (path === "/api/v1/tasks") {
@@ -332,11 +537,16 @@ export async function startService(
       }
     }
     const taskPath = path.match(
-      /^\/api\/v1\/tasks\/([^/]+)(?:\/(result|decision|inspect|reconcile|review|frontier-claim|frontier-complete))?$/,
+      /^\/api\/v1\/tasks\/([^/]+)(?:\/(result|decision|inspect|reconcile|review|frontier-claim|frontier-complete|planning-usage))?$/,
     );
     if (taskPath) {
       const id = idSchema.parse(taskPath[1]);
       const detail = controller.getDetail(id);
+      if (req.method === "POST" && taskPath[2] === "planning-usage") {
+        const input = planningInput.parse(await body(req));
+        json(store.addPlanningUsage(id, input.usage));
+        return;
+      }
       if (req.method === "GET" && taskPath[2] === "review") {
         json(await controller.getReviewPacket(id));
         return;
@@ -388,12 +598,8 @@ export async function startService(
         return;
       }
       if (req.method === "POST" && taskPath[2] === "decision") {
-        json(
-          await controller.decide(
-            id,
-            decisionInput.parse(await body(req)).decision,
-          ),
-        );
+        const input = decisionInput.parse(await body(req));
+        json(await controller.decide(id, input.decision, input.ownerMinutes));
         return;
       }
       if (req.method === "POST" && taskPath[2] === "reconcile") {
@@ -425,6 +631,66 @@ export async function startService(
       res.end(content);
       return;
     }
+    if (req.method === "GET" && path === "/scorecard") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        page(
+          "Scorecard",
+          scorecardMarkup(buildScorecard(store.reportSnapshot())),
+          prefix,
+        ),
+      );
+      return;
+    }
+    if (req.method === "GET" && path === "/audits") {
+      const available = store.getFrontierState().available;
+      const rows = store
+        .listAudits()
+        .map((audit) => {
+          const task = controller.getDetail(audit.taskId).task;
+          const permitted = config.repositories.some(
+            (repo) =>
+              repo.path === task.spec.repo &&
+              repo.data_policy === "frontier-ok",
+          );
+          const status =
+            audit.status === "completed"
+              ? (audit.report?.verdict ?? "Unknown")
+              : !available
+                ? "Frontier off"
+                : !permitted
+                  ? "Repository policy holds audit"
+                  : "Awaiting owner session";
+          return `<tr><td>${audit.id}</td><td><a href="${prefix}tasks/${escapeHtml(task.id)}">${escapeHtml(task.id)}</a></td><td>${escapeHtml(audit.reviewTier)}</td><td>${escapeHtml(status)}</td><td>${escapeHtml(audit.resultSha)}</td></tr>`;
+        })
+        .join("");
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        page(
+          "Deferred audits",
+          `<p>Audits preserve owner acceptance history. Submit them from an authorized Claude session; no automatic paid calls.</p><table><thead><tr><th>Audit</th><th>Task</th><th>Accepted tier</th><th>Status</th><th>Commit</th></tr></thead><tbody>${rows}</tbody></table>`,
+          prefix,
+        ),
+      );
+      return;
+    }
+    if (req.method === "GET" && path === "/endpoints") {
+      const rows = (await controller.endpointHealth())
+        .map(
+          (health) =>
+            `<tr><td>${escapeHtml(health.profileId)}</td><td>${health.healthy ? "Available" : "Waiting"}</td><td>${escapeHtml(health.reason ?? "Exact model is present in the catalog.")}</td></tr>`,
+        )
+        .join("");
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        page(
+          "Endpoint health",
+          `<p>Catalog health does not certify model capability. Frontier services are never probed automatically.</p><table><thead><tr><th>Profile</th><th>Status</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>`,
+          prefix,
+        ),
+      );
+      return;
+    }
     if (req.method === "GET" && path === "/") {
       const tasks = store.listTasks();
       const rows = tasks
@@ -437,7 +703,7 @@ export async function startService(
       res.end(
         page(
           "Queue",
-          `<p>Phase 2 · ${tasks.length} tasks · ${running ? "one slot active" : "slot idle"}. Refresh to see progress.</p><p>Frontier sessions: ${store.getFrontierState().available ? "available" : "off"} · planned reset: ${escapeHtml(store.getFrontierState().resetAt ?? "none")}</p><table><thead><tr><th>Task</th><th>Class</th><th>Profile</th><th>State</th><th>Reason</th><th>Banked</th></tr></thead><tbody>${rows}</tbody></table><p><small>Owner decisions stay in the CLI. Frontier work uses authorized Claude Code sessions; the service makes no automatic paid calls.</small></p>`,
+          `<p>Phase 3 · ${tasks.length} tasks · ${running || controller.isBusy() ? "one slot active" : "slot idle"}. Refresh to see progress.</p><p>Frontier sessions: ${store.getFrontierState().available ? "available" : "off"} · planned reset: ${escapeHtml(store.getFrontierState().resetAt ?? "none")}</p><table><thead><tr><th>Task</th><th>Class</th><th>Profile</th><th>State</th><th>Reason</th><th>Banked</th></tr></thead><tbody>${rows}</tbody></table><p class="note">Evidence delivery: ${store.evidenceCounts().pending} pending · ${store.evidenceCounts().delivered} delivered. ${escapeHtml(evidenceStatus.lastError ?? "")}</p><p><small>Owner decisions stay in the CLI. Frontier work uses authorized Claude Code sessions; the service makes no automatic paid calls.</small></p>`,
           prefix,
         ),
       );
@@ -485,6 +751,7 @@ export async function startService(
   }
   try {
     await controller.recover();
+    await syncEvidence();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(config.port, "127.0.0.1", () => {
@@ -510,7 +777,9 @@ export async function startService(
     await chmod(join(config.data_dir, "service.json"), 0o600);
     if (!options.once) {
       const tick = () => {
-        if (!running && !closing) void dispatch().catch(() => {});
+        if (!closing) void syncEvidence();
+        if (!running && !closing && !controller.isBusy())
+          void dispatch().catch(() => {});
       };
       timer = setInterval(tick, config.poll_interval_ms);
       timer.unref();
@@ -540,6 +809,7 @@ export async function startService(
       await running?.catch(() => {});
       await closed;
       await controller.waitForIdle();
+      await Promise.all(qualificationRuns);
       const descriptor = JSON.parse(
         await readFile(join(config.data_dir, "service.json"), "utf8").catch(
           () => "{}",
@@ -547,6 +817,7 @@ export async function startService(
       ) as Partial<ServiceDescriptor>;
       if (descriptor.token === token)
         await rm(join(config.data_dir, "service.json"), { force: true });
+      await syncEvidence();
       unlock();
       store.close();
     },

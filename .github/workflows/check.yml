@@ -23,3 +23,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: node scripts/validate-community.mjs
+      - run: node scripts/onboarding-smoke.mjs

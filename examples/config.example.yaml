@@ -26,3 +26,9 @@ poll_interval_ms: 5000
 
 # Default policy uses local review for qualified local classes, one repair maximum.
 # Optional review_profile defaults to the task profile.
+
+# Selected audits wait for authorized owner sessions; no automatic paid calls.
+audit_rate: 0.3
+# Publication is a separate opt-in per repository, never implied by data_policy:
+# publication:
+#   public_url: https://github.com/owner/public-repo

@@ -18,3 +18,7 @@ it("preserves separate object keys and JSON-looking string values", () => {
   expect(parseStrictJson(JSON.stringify(input))).toEqual(input);
   expect(() => parseStrictJson('{"a":1,}')).toThrow("Invalid JSON");
 });
+
+it("rejects valid JSON numbers that overflow finite numeric contracts", () => {
+  expect(() => parseStrictJson('{"costUsd":1e400}')).toThrow("Invalid JSON");
+});

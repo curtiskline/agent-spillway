@@ -76,6 +76,23 @@ else{console.log(JSON.stringify({type:'text',part:{text:'worker claim'}}));conso
     delete process.env.SPILLWAY_FIXTURE_API_KEY;
     delete process.env.SPILLWAY_OTHER_PROVIDER_KEY;
   });
+  it("pins qualification sampling temperature without changing ordinary worker defaults", async () => {
+    const result = await new OpenCodeAdapter(executable).run({
+      ...input,
+      temperature: 0,
+    });
+    expect(result.exit).toBe("completed");
+    const captured = JSON.parse(
+      await readFile(
+        join(root, "artifacts", "harness-home", "capture.json"),
+        "utf8",
+      ),
+    );
+    expect(captured.config.agent.build.temperature).toBe(0);
+    await expect(
+      new OpenCodeAdapter(executable).run({ ...input, temperature: Infinity }),
+    ).rejects.toThrow("Temperature");
+  });
   it("uses the documented command/provider config, stdin and private isolated state", async () => {
     process.env.SPILLWAY_OTHER_PROVIDER_KEY = "unrelated-fixture-secret";
     process.env.SPILLWAY_FIXTURE_API_KEY = "configured-fixture-secret";

@@ -4,7 +4,11 @@ import { SpillwayError } from "./contracts.js";
 export function parseStrictJson(text: string): unknown {
   let value: unknown;
   try {
-    value = JSON.parse(text) as unknown;
+    value = JSON.parse(text, (_key, item: unknown) => {
+      if (typeof item === "number" && !Number.isFinite(item))
+        throw new Error("Non-finite JSON number");
+      return item;
+    }) as unknown;
   } catch {
     throw new SpillwayError("INVALID_JSON", "Invalid JSON.");
   }

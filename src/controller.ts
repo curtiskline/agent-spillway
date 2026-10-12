@@ -1,7 +1,17 @@
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import {
+  mkdir,
+  readFile,
+  realpath,
+  stat,
+  writeFile,
+  open,
+  lstat,
+} from "node:fs/promises";
+import { constants } from "node:fs";
+import { join, dirname } from "node:path";
+import { randomUUID, randomInt } from "node:crypto";
 import { homedir } from "node:os";
+import { z } from "zod";
 import {
   SpillwayError,
   type HarnessAdapter,
@@ -12,6 +22,7 @@ import {
   type AttemptRecord,
   type Usage,
   type NextAction,
+  type QualificationJobRecord,
 } from "./contracts.js";
 import { parseTask } from "./task.js";
 import { getPolicy } from "./policy.js";
@@ -20,6 +31,8 @@ import { GitWorkspace, within } from "./git.js";
 import { OpenCodeAdapter, probeEndpoint } from "./harness.js";
 import { verifyAttempt } from "./verify.js";
 import { REVIEW_RUBRIC, parseReviewReport, runLocalReview } from "./review.js";
+import { parseStrictJson } from "./json.js";
+import type { QualificationResult } from "./qualification.js";
 
 const sensitive =
   /(^|\/)(\.github|\.gitlab|migrations?|auth|authentication|authorization|permissions?|secrets?)(\/|$)|(^|\/)(package\.json|[^/]*lock[^/]*|Cargo\.toml|go\.mod|pyproject\.toml|requirements[^/]*\.txt|Dockerfile)$/i;
@@ -32,12 +45,17 @@ const endpointRank = (value: string) =>
 export class Controller {
   private busy = false;
   private idle: Promise<void> = Promise.resolve();
+  private adapter: HarnessAdapter;
+  private fixtureAdapter: boolean;
   constructor(
     readonly config: SpillwayConfig,
     readonly store: Store,
-    private adapter: HarnessAdapter = new OpenCodeAdapter(),
+    adapter?: HarnessAdapter,
     private signal?: AbortSignal,
-  ) {}
+  ) {
+    this.adapter = adapter ?? new OpenCodeAdapter();
+    this.fixtureAdapter = adapter !== undefined;
+  }
   private async withSlot<T>(action: () => Promise<T>): Promise<T> {
     if (this.busy)
       throw new SpillwayError(
@@ -70,20 +88,16 @@ export class Controller {
     return this.store.listAttempts(taskId).at(-1);
   }
   private hasUncertainty(): boolean {
-    return this.store
-      .listTasks()
-      .some(
-        (task) =>
-          !["abandoned", "accepted", "rejected"].includes(task.state) &&
-          (this.store
-            .listAttempts(task.id)
-            .some((a) => a.outcome === "uncertain") ||
-            this.store
-              .listReviews(task.id)
-              .some((r) => r.outcome === "uncertain")),
-      );
+    return this.store.hasUnresolvedExecution();
+  }
+  isBusy(): boolean {
+    return this.busy;
   }
   private activeExecution(): boolean {
+    if (
+      this.store.listQualificationJobs().some((job) => job.status === "running")
+    )
+      return true;
     return this.store
       .listTasks()
       .some(
@@ -201,7 +215,9 @@ export class Controller {
         "REVIEW_POLICY",
         "Checks-only requires explicit experimental opt-in.",
       );
-    this.store.addTask(spec, raw, profile.id, tier);
+    this.store.addTask(spec, raw, profile.id, tier, {
+      policySnapshot: getPolicy(this.config.policy),
+    });
     if (!local)
       this.store.setTaskAction(
         spec.id,
@@ -220,11 +236,13 @@ export class Controller {
       attempts: this.store.listAttempts(id),
       events: this.store.listEvents(id),
       reviews: this.store.listReviews(id),
+      audits: this.store.listAudits(id),
     };
   }
   async decide(
     id: string,
     decision: "accepted" | "rejected",
+    ownerMinutes: number | null = null,
   ): Promise<TaskRecord> {
     const task = this.getDetail(id).task;
     if (task.state !== "ready")
@@ -254,11 +272,19 @@ export class Controller {
           409,
         );
     }
-    this.store.setTaskState(id, decision);
-    this.store.addEvent(id, "owner-decision", {
+    if (tier !== task.reviewTier) this.store.setTaskReview(id, tier);
+    const rate = this.config.audit_rate ?? 0.3;
+    const selected =
+      decision === "accepted" &&
+      tier !== "frontier" &&
+      randomInt(1_000_000) < rate * 1_000_000;
+    this.store.recordDecision(
+      id,
       decision,
-      resultSha: attempt!.resultSha,
-    });
+      attempt!.resultSha!,
+      ownerMinutes,
+      selected,
+    );
     return this.getDetail(id).task;
   }
   private async requirePinned(
@@ -850,6 +876,9 @@ export class Controller {
       model: binding.profile.model,
       resultSha: a!.resultSha!,
       logPath: join(artifacts, "reviewer.log"),
+      modelArtifact: binding.profile.model_artifact,
+      harness: this.adapter.id,
+      harnessVersion: binding.version,
     });
     try {
       const result = await runLocalReview({
@@ -1180,5 +1209,447 @@ export class Controller {
       }
       return this.getDetail(id);
     });
+  }
+
+  private pendingAudit(id: number) {
+    const audit = this.store.getAudit(id);
+    if (!audit) throw new SpillwayError("NOT_FOUND", "Audit not found.", 404);
+    if (audit.status !== "pending")
+      throw new SpillwayError(
+        "AUDIT_COMPLETE",
+        "This audit is already completed.",
+        409,
+      );
+    const task = this.getDetail(audit.taskId).task;
+    const attempt = this.store.getAttempt(audit.attemptId);
+    const decision = this.store.getDecision(task.id);
+    if (
+      task.state !== "accepted" ||
+      decision?.resultSha !== audit.resultSha ||
+      attempt?.outcome !== "completed" ||
+      !attempt.verification?.passed ||
+      attempt.resultSha !== audit.resultSha ||
+      attempt.verification.resultSha !== audit.resultSha
+    )
+      throw new SpillwayError(
+        "STALE_AUDIT",
+        "Audit no longer matches the accepted verified result.",
+        409,
+      );
+    return { audit, task, attempt };
+  }
+  async getAuditPacket(id: number) {
+    const { audit, task, attempt } = this.pendingAudit(id);
+    this.requireFrontier(task);
+    const w = this.workspace(task);
+    const resolved = await w.resolveBase(audit.resultSha);
+    if (
+      resolved !== audit.resultSha ||
+      !(await w.isAncestor(attempt.baseSha, resolved))
+    )
+      throw new SpillwayError(
+        "STALE_AUDIT",
+        "Accepted audit commit is unavailable.",
+        409,
+      );
+    const diff = await w.diff(attempt.baseSha, resolved);
+    if (Buffer.byteLength(diff) > 128 * 1024)
+      throw new SpillwayError(
+        "REVIEW_SIZE",
+        "Audit diff exceeds the session handoff limit.",
+        409,
+      );
+    this.pendingAudit(id);
+    this.requireFrontier(this.getDetail(task.id).task);
+    return {
+      auditId: id,
+      taskId: task.id,
+      attemptId: attempt.id,
+      resultSha: resolved,
+      baseSha: attempt.baseSha,
+      rubric: REVIEW_RUBRIC,
+      task,
+      verification: attempt.verification,
+      diff,
+      source: "owner-session",
+    };
+  }
+  async submitAudit(
+    id: number,
+    input: unknown,
+    meta: { model?: string; usage?: Usage } = {},
+  ) {
+    return this.withSlot(async () => {
+      const packet = await this.getAuditPacket(id);
+      if (input === undefined)
+        throw new SpillwayError(
+          "INVALID_REVIEW",
+          "An audit report is required.",
+          400,
+        );
+      const report = parseReviewReport(JSON.stringify(input));
+      if (report.resultSha !== packet.resultSha)
+        throw new SpillwayError(
+          "STALE_AUDIT",
+          "Audit must report the accepted commit.",
+          409,
+        );
+      this.requireFrontier(this.getDetail(packet.taskId).task);
+      return this.store.finishAudit(id, report, meta);
+    });
+  }
+  async endpointHealth() {
+    return Promise.all(
+      this.config.profiles.map(async (profile) => {
+        const endpoint = this.config.endpoints.find(
+          (item) => item.id === profile.endpoint,
+        );
+        if (!endpoint || endpoint.kind === "frontier")
+          return {
+            profileId: profile.id,
+            healthy: false,
+            reason: "Automatic frontier probing is disabled.",
+          };
+        const health = await probeEndpoint(endpoint, profile.model);
+        return {
+          profileId: profile.id,
+          healthy: health.healthy,
+          ...(!health.healthy
+            ? {
+                reason:
+                  "Configured local/open-weight catalog is unavailable or missing the model.",
+              }
+            : {}),
+        };
+      }),
+    );
+  }
+  async qualify(
+    profileId: string,
+    metadata?: unknown,
+    onStarted?: (job: QualificationJobRecord) => void,
+  ) {
+    return this.withSlot(async () => {
+      if (this.hasUncertainty() || this.activeExecution())
+        throw new SpillwayError(
+          "BUSY",
+          "Interrupted or active execution blocks qualification.",
+          409,
+        );
+      const profile = this.config.profiles.find(
+        (item) => item.id === profileId,
+      );
+      const endpoint = this.config.endpoints.find(
+        (item) => item.id === profile?.endpoint,
+      );
+      if (!profile || !endpoint)
+        throw new SpillwayError(
+          "PROFILE_MISSING",
+          "Qualification profile is unavailable.",
+          400,
+        );
+      if (endpoint.kind !== "local")
+        throw new SpillwayError(
+          "DATA_POLICY",
+          "This qualification workflow permits local endpoints only.",
+          403,
+        );
+      const { runQualification, qualificationMetadataSchema } =
+        await import("./qualification.js");
+      if (metadata !== undefined) qualificationMetadataSchema.parse(metadata);
+      const id = `qualification-${randomUUID()}`;
+      const root = join(this.config.data_dir, "qualifications", id);
+      const job = this.store.createQualificationJob({ id, profileId, root });
+      try {
+        onStarted?.(job);
+        const result = await runQualification({
+          profile,
+          endpoint,
+          adapter: this.adapter,
+          root,
+          metadata,
+          signal: this.signal,
+          provenance: this.fixtureAdapter ? "fixture" : "real",
+        });
+        if (this.signal?.aborted)
+          throw new SpillwayError(
+            "INTERRUPTED",
+            "Qualification interrupted.",
+            409,
+          );
+        await mkdir(root, { recursive: true, mode: 0o700 });
+        const resultPath = join(root, "result.json");
+        const file = await open(resultPath, "wx", 0o600);
+        try {
+          await file.writeFile(JSON.stringify(result, null, 2));
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        for (let directory = root; ; directory = dirname(directory)) {
+          if (!within(directory, this.config.data_dir))
+            throw new SpillwayError(
+              "QUALIFICATION_PATH",
+              "Qualification directory escaped private storage.",
+            );
+          const handle = await open(directory, "r");
+          try {
+            await handle.sync();
+          } finally {
+            await handle.close();
+          }
+          if (directory === this.config.data_dir) break;
+        }
+        this.store.finishQualificationJob(
+          id,
+          result.uncertain ? "uncertain" : "completed",
+          resultPath,
+          result.uncertain
+            ? "Qualification subprocess completion is uncertain; inspect and stop survivors before reconciliation."
+            : undefined,
+        );
+        return { jobId: id, result };
+      } catch {
+        this.store.finishQualificationJob(
+          id,
+          "uncertain",
+          undefined,
+          "Qualification could not establish complete execution; inspect private evidence and stop survivors before reconciliation.",
+        );
+        throw new SpillwayError(
+          "QUALIFICATION_UNCERTAIN",
+          "Qualification interrupted or failed unexpectedly; inspect the recorded job.",
+          409,
+        );
+      }
+    });
+  }
+  async qualificationDetail(
+    id: string,
+  ): Promise<{
+    job: QualificationJobRecord;
+    result: QualificationResult | null;
+  }> {
+    const job = this.store.getQualificationJob(id);
+    if (!job)
+      throw new SpillwayError("NOT_FOUND", "Qualification job not found.", 404);
+    if (job.resultPath === null) return { job, result: null };
+    const unavailable = () =>
+      new SpillwayError(
+        "QUALIFICATION_RESULT",
+        "Qualification result is unavailable or corrupt; inspect private evidence.",
+        409,
+      );
+    const limit = 1024 * 1024;
+    try {
+      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(job.id)) throw unavailable();
+      const expectedRoot = join(this.config.data_dir, "qualifications", job.id);
+      const expectedFile = join(expectedRoot, "result.json");
+      if (
+        job.root !== expectedRoot ||
+        job.resultPath !== expectedFile ||
+        !within(expectedRoot, this.config.data_dir)
+      )
+        throw unavailable();
+      const directories = async () => {
+        for (let directory = expectedRoot; ; directory = dirname(directory)) {
+          if (!within(directory, this.config.data_dir)) throw unavailable();
+          const info = await lstat(directory);
+          if (
+            !info.isDirectory() ||
+            info.isSymbolicLink() ||
+            (info.mode & 0o077) !== 0 ||
+            (process.getuid && info.uid !== process.getuid()) ||
+            (await realpath(directory)) !== directory
+          )
+            throw unavailable();
+          if (directory === this.config.data_dir) break;
+        }
+      };
+      await directories();
+      const before = await lstat(expectedFile);
+      if (
+        !before.isFile() ||
+        before.isSymbolicLink() ||
+        before.nlink !== 1 ||
+        before.size < 1 ||
+        before.size > limit ||
+        (before.mode & 0o077) !== 0 ||
+        (process.getuid && before.uid !== process.getuid())
+      )
+        throw unavailable();
+      const file = await open(
+        expectedFile,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      let raw: string;
+      try {
+        const info = await file.stat();
+        if (
+          !info.isFile() ||
+          info.nlink !== 1 ||
+          info.dev !== before.dev ||
+          info.ino !== before.ino ||
+          info.size > limit ||
+          (info.mode & 0o077) !== 0 ||
+          (process.getuid && info.uid !== process.getuid())
+        )
+          throw unavailable();
+        const buffer = Buffer.alloc(limit + 1);
+        let length = 0;
+        while (length < buffer.length) {
+          const { bytesRead } = await file.read(
+            buffer,
+            length,
+            buffer.length - length,
+            null,
+          );
+          if (!bytesRead) break;
+          length += bytesRead;
+        }
+        if (length > limit) throw unavailable();
+        raw = buffer.subarray(0, length).toString("utf8");
+        const after = await lstat(expectedFile);
+        if (
+          !after.isFile() ||
+          after.isSymbolicLink() ||
+          after.nlink !== 1 ||
+          after.dev !== info.dev ||
+          after.ino !== info.ino ||
+          (after.mode & 0o077) !== 0 ||
+          (process.getuid && after.uid !== process.getuid())
+        )
+          throw unavailable();
+      } finally {
+        await file.close();
+      }
+      await directories();
+      const { qualificationMetadataSchema, CAPABILITIES } =
+        await import("./qualification.js");
+      const boundedString = z.string().max(16384);
+      const path = z.string().max(4096);
+      const sha = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
+      const nonnegative = z.number().finite().nonnegative();
+      const count = nonnegative.int();
+      const usage = z
+        .object({
+          inputTokens: count.optional(),
+          outputTokens: count.optional(),
+          costUsd: nonnegative.optional(),
+        })
+        .strict();
+      const check = z
+        .object({
+          command: boundedString,
+          exitCode: z.number().finite().int().nullable(),
+          timedOut: z.boolean(),
+          durationMs: nonnegative,
+          logPath: path,
+        })
+        .strict();
+      const verification = z
+        .object({
+          passed: z.boolean(),
+          reason: boundedString.optional(),
+          resultSha: sha.optional(),
+          changedPaths: z.array(path).max(10000),
+          flags: z.array(boundedString).max(100),
+          checks: z.array(check).max(100),
+          diffPath: path.optional(),
+        })
+        .strict();
+      const tool = z
+        .object({
+          tool: z.string().max(100),
+          status: z.enum(["completed", "error"]),
+          round: count,
+          eventIndex: count,
+          exitCode: z.number().finite().int().nullable(),
+        })
+        .strict();
+      const schema: z.ZodType<QualificationResult> = z
+        .object({
+          version: z.literal(1),
+          suiteVersion: z.literal(1),
+          scope: z.literal("tool-workload-only"),
+          provenance: z.enum(["real", "fixture"]),
+          qualified: z.boolean(),
+          uncertain: z.boolean(),
+          startedAt: z.string().datetime({ offset: true }),
+          finishedAt: z.string().datetime({ offset: true }),
+          profileId: z.string().min(1).max(128),
+          catalogModel: z.string().min(1).max(4096),
+          harnessVersion: z.string().max(100).nullable(),
+          metadata: qualificationMetadataSchema,
+          metadataComplete: z.boolean(),
+          requestedSettings: z
+            .object({ temperature: z.literal(0), concurrency: z.literal(1) })
+            .strict(),
+          workloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+          failures: z.array(boundedString).max(100),
+          cases: z
+            .array(
+              z
+                .object({
+                  capability: z.enum(CAPABILITIES),
+                  outcome: z.enum([
+                    "passed",
+                    "failed",
+                    "timeout",
+                    "transport_error",
+                    "held",
+                    "uncertain",
+                  ]),
+                  durationMs: nonnegative,
+                  reason: boundedString.nullable(),
+                  usage: usage.nullable(),
+                  baseSha: sha.nullable(),
+                  resultSha: sha.nullable(),
+                  verification: verification.nullable(),
+                  observations: z
+                    .object({
+                      valid: z.boolean(),
+                      finalStop: z.boolean(),
+                      rounds: count,
+                      tools: z.array(tool).max(10000),
+                      requirementsMet: z.boolean(),
+                      contextBytesObserved: count,
+                    })
+                    .strict(),
+                  logPath: path.nullable(),
+                  worktree: path.nullable(),
+                  contextBytes: count,
+                })
+                .strict(),
+            )
+            .length(CAPABILITIES.length),
+        })
+        .strict()
+        .refine(
+          (result) =>
+            new Set(result.cases.map((row) => row.capability)).size ===
+            CAPABILITIES.length,
+        )
+        .refine(
+          (result) =>
+            !result.qualified ||
+            (result.provenance === "real" &&
+              !result.uncertain &&
+              result.metadataComplete &&
+              result.cases.every(
+                (row) =>
+                  row.outcome === "passed" &&
+                  row.observations.valid &&
+                  row.observations.finalStop &&
+                  row.observations.requirementsMet &&
+                  row.verification?.passed,
+              )),
+        );
+      const result = schema.parse(parseStrictJson(raw));
+      if (result.profileId !== job.profileId) throw unavailable();
+      return { job, result };
+    } catch {
+      throw unavailable();
+    }
   }
 }

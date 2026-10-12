@@ -2,9 +2,9 @@
 
 Bank precise coding tasks while frontier capacity is available, then drain them through an existing agent harness using a local or explicitly permitted hosted endpoint. Spillway independently verifies committed work and leaves a result branch for owner review.
 
-**Pre-alpha, Phase 2.** Spillway provides a foreground or per-user service, private SQLite queue, parser/lint, CLI, stdio MCP, OpenCode adapter, Git worktrees, clean-checkout verification and an authenticated read-only local dashboard. Phase 2 adds local review, bounded repair, deterministic policy, manual frontier availability and owner-session frontier work. Tests use disposable repositories, a fixture harness and mock model catalogs. They prove pipeline behavior, not model capability. Real LM Studio toy-task spikes have passed with OpenCode and Aider, and a background-service worker/check/local-review workflow reached ready; broader model qualification and clean-machine onboarding remain open gates. There is no published release or broadly qualified model profile yet. See [the harness spike](docs/spikes/real-harness.md) and [local review checkpoint](docs/spikes/phase2-local-review.md). Maintenance is the owner's spare-time project.
+**Pre-alpha, Phase 3.** Spillway provides a foreground or per-user service, private SQLite queue, parser/lint, CLI, stdio MCP, OpenCode adapter, Git worktrees, clean-checkout verification and an authenticated read-only local dashboard. Local review, bounded repair, deterministic policy, manual frontier availability and owner-session frontier work are joined by durable evidence, scorecards, sampled audits, sanitized exports and a fixed qualification workload. Tests use disposable repositories, a fixture harness and mock model catalogs. They prove pipeline behavior, not model capability. Real LM Studio toy-task spikes have passed with OpenCode and Aider, and a background-service worker/check/local-review workflow reached ready; broader model qualification and live Claude marketplace onboarding remain open gates; isolated package onboarding is fixture-tested. There is no published release or broadly qualified model profile yet. See [the harness spike](docs/spikes/real-harness.md) and [local review checkpoint](docs/spikes/phase2-local-review.md). Maintenance is the owner's spare-time project.
 
-The default local review runs through the approved OpenCode profile in a separate detached checkout. A verified result needs its configured review tier before becoming ready. Repairs are bounded by both task attempts and policy, with at most one local repair. Required frontier work holds until explicitly permitted; it runs only in an authorized Claude Code session, with no automatic paid provider calls. Audits, scorecards, sanitized exports, qualification commands and releases remain later milestones. Spillway never auto-merges, pushes or deploys.
+The default local review runs through the approved OpenCode profile in a separate detached checkout. A verified result needs its configured review tier before becoming ready. Repairs are bounded by both task attempts and policy, with at most one local repair. Required frontier work holds until explicitly permitted; it runs only in an authorized Claude Code session, with no automatic paid provider calls. Audits use authorized owner sessions, and qualification uses the configured local endpoint. Release remains gated by real evidence. Spillway never auto-merges, pushes or deploys.
 
 ## Development setup
 
@@ -79,9 +79,34 @@ All commands accept `--config PATH` and `--data-dir PATH`. Queue commands requir
 
 After a crash, interrupted work becomes held/uncertain and the queue pauses because detached workers may survive. Inspect the worktree, stop any surviving worker processes, then explicitly run `spillway reconcile TASK-ID --worker-stopped`. This abandons that interrupted task and preserves its evidence; bank a new task ID if you want to retry. Never reconcile while an old worker is still running.
 
+## Evidence, scorecards and qualification
+
+SQLite transactions record evidence in an outbox, delivered to a private, fsynced JSONL file. Delivery failures remain visible and retryable; a missing or altered acknowledged prefix holds delivery instead of silently replacing history. Inspect operational health and scorecards with:
+
+```sh
+spillway report --json
+spillway audit list
+spillway qualify list
+spillway qualify show JOB-ID
+```
+
+Scorecards distinguish local and frontier usage, missing measurements, owner decisions and small samples. Optional `--owner-minutes N` on accept/reject records owner time. Planning usage can be submitted from a private file with `spillway usage TASK-ID --file PATH`. Accepted local/checks-only results are sampled once for an audit (`audit_rate` defaults to 0.3). Use `spillway audit show AUDIT-ID` and `spillway audit submit AUDIT-ID --file PATH` from an authorized Claude Code session; pending audits remain visible when frontier availability or repository permission blocks review. An audit preserves the original owner decision and result SHA.
+
+Run the seven fixed tool workloads through the existing OpenCode harness:
+
+```sh
+spillway qualify --profile PROFILE-ID --metadata /absolute/private/metadata.json
+```
+
+The command returns a durable job receipt immediately. Inspect progress and the completed private result with `spillway qualify show JOB-ID`; disconnecting the client does not cancel service-owned execution. Start from [the metadata template](profiles/metadata.template.json). Record the exact artifact SHA-256, license, harness/server versions, loaded context, hardware and settings. Qualification explicitly requests temperature 0 and one concurrent workload. Keep the endpoint stable throughout a run. Missing metadata and fixture results cannot qualify a public profile, and tool-workload qualification does not promote task classes. Interrupted qualification jobs fence further inference; stop surviving processes before `spillway qualify reconcile JOB-ID --worker-stopped`.
+
+Public export requires a separate repository `publication.public_url` opt-in and an anonymous GitHub check that the repository is public. `spillway export --sanitized --repo https://github.com/OWNER/REPO` returns a closed anonymous projection with no raw task text, code, paths or logs. Optional `--profile-file PATH` binds reviewed public metadata to current and historical model/harness identities. Export does not publish anything. See [Phase 3 contracts](docs/PHASE3.md) and [community profile rules](profiles/README.md).
+
+For package/fixture onboarding validation after a build, run `npm run smoke:onboarding`; community schemas are checked with `npm run validate:community`. These do not make provider calls or prove live Claude marketplace installation.
+
 ## Claude Code plugin and MCP
 
-For local development, make the built `spillway` CLI available in PATH and launch Claude Code with `claude --plugin-dir ./plugins/spillway`. The plugin includes `/spillway:bank`, `/spillway:status`, `/spillway:setup`, a SessionStart summary hook, and reviewer/frontier-worker subagents for explicitly authorized owner sessions. It follows the [official plugin manifest](https://code.claude.com/docs/en/plugins-reference), [hook reference](https://code.claude.com/docs/en/hooks) and [subagent reference](https://code.claude.com/docs/en/sub-agents). The installed CLI must match the service version; incompatible descriptors are rejected. Setup supports source builds and per-user service installation, respects existing authorization and does not enroll credentials or paid providers.
+For local development, make the built `spillway` CLI available in PATH and launch Claude Code with `claude --plugin-dir ./plugins/spillway`. The plugin includes `/spillway:bank`, `/spillway:status`, `/spillway:setup`, a SessionStart summary hook, and reviewer/frontier-worker/auditor subagents for explicitly authorized owner sessions. It follows the [official plugin manifest](https://code.claude.com/docs/en/plugins-reference), [hook reference](https://code.claude.com/docs/en/hooks) and [subagent reference](https://code.claude.com/docs/en/sub-agents). The installed CLI must match the service version; incompatible descriptors are rejected. Setup supports source builds and per-user service installation, respects existing authorization and does not enroll credentials or paid providers.
 
 The repository also has a marketplace skeleton. The intended release path is `/plugin marketplace add curtiskline/agent-spillway`, then `/plugin install spillway@agent-spillway`. End-to-end marketplace installation and live session banking are later acceptance gates, not a tested onboarding promise in this pre-alpha.
 
@@ -89,7 +114,7 @@ Other MCP clients can configure `{ "command": "spillway", "args": ["mcp"] }`. To
 
 ## Trust and privacy
 
-Spillway is **not a sandbox**. Harnesses and trusted owner-authored task checks run with your OS privileges. Use a dedicated OS account or container when stronger isolation is needed. The service contacts only configured model endpoints; the plugin uses the local service. No telemetry. Config, provider references, task text, prompts, logs, tokens, queue state and reports stay in private directories outside repositories. The dashboard is authenticated, loopback-only and read-only, and can display private code. See [SECURITY.md](SECURITY.md).
+Spillway is **not a sandbox**. Harnesses and trusted owner-authored task checks run with your OS privileges. Use a dedicated OS account or container when stronger isolation is needed. Inference contacts only configured model endpoints; explicit public export checks GitHub anonymously. The plugin uses the local service. No telemetry. Config, provider references, task text, prompts, logs, tokens, queue state and reports stay in private directories outside repositories. The dashboard is authenticated, loopback-only and read-only, and can display private code. See [SECURITY.md](SECURITY.md).
 
 See [the specification](docs/design.md), [architecture](docs/ARCHITECTURE.md), [interfaces](docs/INTERFACES.md) and [implementation status](docs/IMPLEMENTATION_PLAN.md). [Horde](https://github.com/gethamster/horde) informed the design; Spillway implements a narrower single-machine queue and reuses existing harnesses. No Horde code is adapted in this implementation.
 

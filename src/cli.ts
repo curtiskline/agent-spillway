@@ -10,6 +10,8 @@ import { SpillwayError, VERSION } from "./contracts.js";
 import { serveMcp } from "./mcp.js";
 import { lintTask } from "./task.js";
 import { parseReviewReport } from "./review.js";
+import { parseStrictJson } from "./json.js";
+import { formatReport, type Scorecard } from "./report.js";
 
 interface CliOptions {
   config?: string;
@@ -22,7 +24,7 @@ interface Output {
   err(text: string): void;
 }
 const usage =
-  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall";
+  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall\nreport [--json], audit list|show ID|submit ID --file PATH\nusage ID --file PATH, export --sanitized --repo URL [--profile-file PATH]\nqualify --profile ID [--metadata PATH], qualify list|show JOB-ID|reconcile JOB-ID --worker-stopped\naccept|reject ID [--owner-minutes N]";
 function parseArgs(argv: string[]): CliOptions {
   const positional: string[] = [];
   const options: { config?: string; dataDir?: string } = {};
@@ -58,6 +60,15 @@ async function clientFor(options: CliOptions): Promise<ServiceClient> {
     return new ServiceClient(defaultDataDir());
   }
   return new ServiceClient((await loadConfig(configPath)).data_dir);
+}
+async function readJsonFile(path: string): Promise<unknown> {
+  const selected = resolve(path);
+  if ((await stat(selected)).size > 256 * 1024)
+    throw new SpillwayError("usage", "JSON input must be under 256 KiB.");
+  const text = await readFile(selected, "utf8");
+  if (Buffer.byteLength(text) > 256 * 1024)
+    throw new SpillwayError("usage", "JSON input must be under 256 KiB.");
+  return parseStrictJson(text);
 }
 function requireArgs(args: string[], count: number): void {
   if (args.length !== count)
@@ -110,9 +121,8 @@ export async function runCli(
           "usage",
           "Configure data_dir in the private config before service installation; service actions do not accept --data-dir.",
         );
-      const { installService, manageService } = await import(
-        "./service-manager.js"
-      );
+      const { installService, manageService } =
+        await import("./service-manager.js");
       let result: unknown;
       if (args[0] === "install") {
         if (args.length > 2 || (args.length === 2 && args[1] !== "--no-start"))
@@ -158,6 +168,117 @@ export async function runCli(
     const client = await clientFor(options);
     let result: unknown;
     switch (command) {
+      case "report": {
+        if (args.length > 1 || (args.length === 1 && args[0] !== "--json"))
+          throw new SpillwayError("usage", "Use report [--json].");
+        result = await client.request("GET", "/api/v1/report");
+        if (!args.length) {
+          output.out(formatReport(result as Scorecard));
+          return 0;
+        }
+        break;
+      }
+      case "audit": {
+        if (args[0] === "list") {
+          requireArgs(args, 1);
+          result = await client.request("GET", "/api/v1/audits");
+        } else if (args[0] === "show") {
+          requireArgs(args, 2);
+          if (!/^[1-9]\d*$/.test(args[1]!))
+            throw new SpillwayError("usage", "Audit ID must be positive.");
+          result = await client.request(
+            "GET",
+            `/api/v1/audits/${args[1]}/packet`,
+          );
+        } else if (args[0] === "submit") {
+          requireArgs(args, 4);
+          if (args[2] !== "--file" || !/^[1-9]\d*$/.test(args[1]!))
+            throw new SpillwayError(
+              "usage",
+              "Use audit submit ID --file PATH.",
+            );
+          const raw = await readJsonFile(args[3]!);
+          const report = parseReviewReport(JSON.stringify(raw));
+          result = await client.request(
+            "POST",
+            `/api/v1/audits/${args[1]}/report`,
+            { report },
+          );
+        } else
+          throw new SpillwayError(
+            "usage",
+            "Use audit list|show ID|submit ID --file PATH.",
+          );
+        break;
+      }
+      case "usage": {
+        requireArgs(args, 3);
+        if (args[1] !== "--file")
+          throw new SpillwayError("usage", "Use usage ID --file PATH.");
+        result = await client.request(
+          "POST",
+          `/api/v1/tasks/${taskId(args[0]!)}/planning-usage`,
+          { usage: await readJsonFile(args[2]!) },
+        );
+        break;
+      }
+      case "export": {
+        if (
+          ![3, 5].includes(args.length) ||
+          args[0] !== "--sanitized" ||
+          args[1] !== "--repo" ||
+          (args.length === 5 && args[3] !== "--profile-file")
+        )
+          throw new SpillwayError(
+            "usage",
+            "Use export --sanitized --repo URL [--profile-file PATH].",
+          );
+        result = await client.request("POST", "/api/v1/export", {
+          publicUrl: args[2],
+          ...(args[4] ? { manifest: await readJsonFile(args[4]) } : {}),
+        });
+        break;
+      }
+      case "qualify": {
+        if (args[0] === "list") {
+          requireArgs(args, 1);
+          result = await client.request("GET", "/api/v1/qualifications");
+        } else if (args[0] === "show") {
+          requireArgs(args, 2);
+          result = await client.request(
+            "GET",
+            `/api/v1/qualifications/${taskId(args[1]!)}`,
+          );
+        } else if (args[0] === "reconcile") {
+          requireArgs(args, 3);
+          if (args[2] !== "--worker-stopped")
+            throw new SpillwayError(
+              "usage",
+              "Stop surviving qualification processes, then use qualify reconcile JOB-ID --worker-stopped.",
+            );
+          result = await client.request(
+            "POST",
+            `/api/v1/qualifications/${taskId(args[1]!)}/reconcile`,
+            { worker_stopped: true },
+          );
+        } else {
+          if (
+            ![2, 4].includes(args.length) ||
+            args[0] !== "--profile" ||
+            (args.length === 4 && args[2] !== "--metadata")
+          )
+            throw new SpillwayError(
+              "usage",
+              "Use qualify --profile ID [--metadata PATH].",
+            );
+          result = await client.request("POST", "/api/v1/qualify", {
+            profileId: taskId(args[1]!),
+            background: true,
+            ...(args[3] ? { metadata: await readJsonFile(args[3]) } : {}),
+          });
+        }
+        break;
+      }
       case "frontier": {
         const action = args[0];
         if (action === "status") {
@@ -288,14 +409,37 @@ export async function runCli(
         );
         break;
       case "accept":
-      case "reject":
-        requireArgs(args, 1);
+      case "reject": {
+        if (
+          args.length !== 1 &&
+          (args.length !== 3 || args[1] !== "--owner-minutes")
+        )
+          throw new SpillwayError(
+            "usage",
+            "Use accept|reject ID [--owner-minutes N].",
+          );
+        const minutes = args[2] === undefined ? undefined : Number(args[2]);
+        if (
+          minutes !== undefined &&
+          (!/^\d+(?:\.\d+)?$/.test(args[2]!) ||
+            !Number.isFinite(minutes) ||
+            minutes < 0 ||
+            minutes > 1000000)
+        )
+          throw new SpillwayError(
+            "usage",
+            "Owner minutes must be a bounded nonnegative number.",
+          );
         result = await client.request(
           "POST",
           `/api/v1/tasks/${taskId(args[0]!)}/decision`,
-          { decision: command === "accept" ? "accepted" : "rejected" },
+          {
+            decision: command === "accept" ? "accepted" : "rejected",
+            ...(minutes === undefined ? {} : { ownerMinutes: minutes }),
+          },
         );
         break;
+      }
       case "status":
         requireArgs(args, 0);
         result = await client.request("GET", "/api/v1/status");

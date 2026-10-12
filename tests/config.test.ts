@@ -147,47 +147,165 @@ describe("private configuration", () => {
   });
 });
 
-describe('phase two policy and review profile bindings', () => {
-  it('returns effective default policy without inventing a review profile', async () => {
+describe("phase two policy and review profile bindings", () => {
+  it("returns effective default policy without inventing a review profile", async () => {
     const config = await validateConfig(input());
-    expect(config.policy?.classes.risky.review).toBe('frontier'); expect(config.policy?.max_repairs).toBe(1);
+    expect(config.policy?.classes.risky.review).toBe("frontier");
+    expect(config.policy?.max_repairs).toBe(1);
     expect(config.review_profile).toBeUndefined();
   });
-  it('accepts explicit local and hosted open-weight review bindings while retaining repo policy', async () => {
-    expect((await validateConfig({ ...input(), review_profile: 'coder' })).review_profile).toBe('coder');
+  it("accepts explicit local and hosted open-weight review bindings while retaining repo policy", async () => {
+    expect(
+      (await validateConfig({ ...input(), review_profile: "coder" }))
+        .review_profile,
+    ).toBe("coder");
     const base = input();
-    const config = await validateConfig({ ...base, review_profile: 'reviewer', endpoints: [...base.endpoints,{ id: 'hosted',kind: 'open-weight-hosted',url: 'https://example.test/v1' }],
-      profiles: [...base.profiles,{ ...base.profiles[0], id: 'reviewer',endpoint: 'hosted' }] });
-    expect(config.review_profile).toBe('reviewer'); expect(config.repositories[0]?.data_policy).toBe('local-only');
+    const config = await validateConfig({
+      ...base,
+      review_profile: "reviewer",
+      endpoints: [
+        ...base.endpoints,
+        {
+          id: "hosted",
+          kind: "open-weight-hosted",
+          url: "https://example.test/v1",
+        },
+      ],
+      profiles: [
+        ...base.profiles,
+        { ...base.profiles[0], id: "reviewer", endpoint: "hosted" },
+      ],
+    });
+    expect(config.review_profile).toBe("reviewer");
+    expect(config.repositories[0]?.data_policy).toBe("local-only");
   });
-  it('rejects missing and frontier review profiles', async () => {
-    await expect(validateConfig({ ...input(), review_profile: 'missing' })).rejects.toThrow(/unknown/);
-    const base = input(); await expect(validateConfig({ ...base,review_profile: 'coder',endpoints: [{ ...base.endpoints[0],kind: 'frontier' }] })).rejects.toThrow(/local or open-weight/);
+  it("rejects missing and frontier review profiles", async () => {
+    await expect(
+      validateConfig({ ...input(), review_profile: "missing" }),
+    ).rejects.toThrow(/unknown/);
+    const base = input();
+    await expect(
+      validateConfig({
+        ...base,
+        review_profile: "coder",
+        endpoints: [{ ...base.endpoints[0], kind: "frontier" }],
+      }),
+    ).rejects.toThrow(/local or open-weight/);
   });
-  it('does not allow custom policy to bypass hard invariants', async () => {
-    const { defaultPolicy } = await import('../src/policy.js'); const policy = defaultPolicy(); policy.classes.risky.review = 'checks-only';
-    await expect(validateConfig({ ...input(),policy })).rejects.toThrow(/frontier/);
-    const good = defaultPolicy(); good.max_repairs = 0; good.classes.mechanical.review = 'checks-only';
-    const config = await validateConfig({ ...input(),policy: good }); expect(config.policy?.max_repairs).toBe(0);
+  it("does not allow custom policy to bypass hard invariants", async () => {
+    const { defaultPolicy } = await import("../src/policy.js");
+    const policy = defaultPolicy();
+    policy.classes.risky.review = "checks-only";
+    await expect(validateConfig({ ...input(), policy })).rejects.toThrow(
+      /frontier/,
+    );
+    const good = defaultPolicy();
+    good.max_repairs = 0;
+    good.classes.mechanical.review = "checks-only";
+    const config = await validateConfig({ ...input(), policy: good });
+    expect(config.policy?.max_repairs).toBe(0);
   });
 });
 
-describe('private credential file references', () => {
-  it('validates file metadata without copying secret content into config', async () => {
-    const path = join(root,'dummy-key'); const dummy = 'fixture-only-dummy-value'; await writeFile(path,dummy,{ mode: 0o600 });
-    const base = input(); const config = await validateConfig({ ...base,endpoints: [{ ...base.endpoints[0],api_key_file: path }] });
-    expect(config.endpoints[0]?.api_key_file).toBe(await realpath(path)); expect(JSON.stringify(config)).not.toContain(dummy);
+describe("private credential file references", () => {
+  it("validates file metadata without copying secret content into config", async () => {
+    const path = join(root, "dummy-key");
+    const dummy = "fixture-only-dummy-value";
+    await writeFile(path, dummy, { mode: 0o600 });
+    const base = input();
+    const config = await validateConfig({
+      ...base,
+      endpoints: [{ ...base.endpoints[0], api_key_file: path }],
+    });
+    expect(config.endpoints[0]?.api_key_file).toBe(await realpath(path));
+    expect(JSON.stringify(config)).not.toContain(dummy);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
-  it('rejects simultaneous env/file refs before reading or creating private data', async () => {
-    const base = input(); await expect(validateConfig({ ...base,endpoints: [{ ...base.endpoints[0],api_key_env: 'FIXTURE_KEY',api_key_file: join(root,'missing') }] })).rejects.toThrow(/one credential/);
+  it("rejects simultaneous env/file refs before reading or creating private data", async () => {
+    const base = input();
+    await expect(
+      validateConfig({
+        ...base,
+        endpoints: [
+          {
+            ...base.endpoints[0],
+            api_key_env: "FIXTURE_KEY",
+            api_key_file: join(root, "missing"),
+          },
+        ],
+      }),
+    ).rejects.toThrow(/one credential/);
   });
-  it('rejects world-readable, symlinked and repository credential files', async () => {
-    const base = input(); const publicPath = join(root,'public-key'); await writeFile(publicPath,'fixture-only',{ mode: 0o644 });
-    await expect(validateConfig({ ...base,endpoints: [{ ...base.endpoints[0],api_key_file: publicPath }] })).rejects.toThrow(/private/);
-    const key = join(root,'key'); await writeFile(key,'fixture-only',{ mode: 0o600 }); const link = join(root,'key-link'); await symlink(key,link);
-    await expect(validateConfig({ ...base,endpoints: [{ ...base.endpoints[0],api_key_file: link }] })).rejects.toThrow(/private/);
-    const repoKey = join(repo,'key'); await writeFile(repoKey,'fixture-only',{ mode: 0o600 });
-    await expect(validateConfig({ ...base,endpoints: [{ ...base.endpoints[0],api_key_file: repoKey }] })).rejects.toThrow(/private/);
+  it("rejects world-readable, symlinked and repository credential files", async () => {
+    const base = input();
+    const publicPath = join(root, "public-key");
+    await writeFile(publicPath, "fixture-only", { mode: 0o644 });
+    await expect(
+      validateConfig({
+        ...base,
+        endpoints: [{ ...base.endpoints[0], api_key_file: publicPath }],
+      }),
+    ).rejects.toThrow(/private/);
+    const key = join(root, "key");
+    await writeFile(key, "fixture-only", { mode: 0o600 });
+    const link = join(root, "key-link");
+    await symlink(key, link);
+    await expect(
+      validateConfig({
+        ...base,
+        endpoints: [{ ...base.endpoints[0], api_key_file: link }],
+      }),
+    ).rejects.toThrow(/private/);
+    const repoKey = join(repo, "key");
+    await writeFile(repoKey, "fixture-only", { mode: 0o600 });
+    await expect(
+      validateConfig({
+        ...base,
+        endpoints: [{ ...base.endpoints[0], api_key_file: repoKey }],
+      }),
+    ).rejects.toThrow(/private/);
+  });
+});
+
+describe("phase three publication and audit defaults", () => {
+  it("keeps publication opt-in separate from inference policy and defaults audits to 30 percent", async () => {
+    const base = input();
+    const config = await validateConfig(base);
+    expect(config.audit_rate).toBe(0.3);
+    expect(config.repositories[0]?.publication).toBeUndefined();
+    const granted = await validateConfig({
+      ...base,
+      audit_rate: 0,
+      repositories: [
+        {
+          path: repo,
+          data_policy: "local-only",
+          publication: { public_url: "https://github.com/public/pilot" },
+        },
+      ],
+    });
+    expect(granted.audit_rate).toBe(0);
+    expect(granted.repositories[0]?.data_policy).toBe("local-only");
+    expect(granted.repositories[0]?.publication?.public_url).toBe(
+      "https://github.com/public/pilot",
+    );
+  });
+  it("rejects invalid audit rates and non-publication-shaped URLs before writing private state", async () => {
+    for (const rate of [-0.1, 1.1, Infinity])
+      await expect(
+        validateConfig({ ...input(), audit_rate: rate }),
+      ).rejects.toThrow();
+    for (const url of [
+      "https://private.example/repo",
+      "https://github.com/a/b?token=x",
+      "https://user:pass@github.com/a/b",
+      "https://github.com/a/b/../../c",
+    ])
+      await expect(
+        validateConfig({
+          ...input(),
+          repositories: [{ path: repo, publication: { public_url: url } }],
+        }),
+      ).rejects.toThrow();
   });
 });

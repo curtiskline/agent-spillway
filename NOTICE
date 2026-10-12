@@ -1,0 +1,7 @@
+Agent Spillway
+Copyright 2026 Agent Spillway contributors
+
+Original code and documentation are licensed under Apache-2.0.
+Horde (https://github.com/gethamster/horde) is a design reference; no code
+has been adapted or copied from it in this implementation.
+Third-party dependencies, harnesses and model weights retain their own licenses.

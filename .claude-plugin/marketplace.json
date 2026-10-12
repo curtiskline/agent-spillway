@@ -1,0 +1,6 @@
+{
+  "name": "agent-spillway",
+  "description": "Pre-alpha Agent Spillway task banking plugin scaffold",
+  "owner": { "name": "Curt Kline" },
+  "plugins": [{ "name": "spillway", "source": "./plugins/spillway", "description": "Pre-alpha task banking and queue visibility for Agent Spillway", "version": "0.0.0" }]
+}

@@ -22,6 +22,20 @@ A fresh run was admitted after the first completed and the idle service was upgr
 
 A real OpenCode 1.19.0 subprocess against a loopback HTTP fixture reproduced two completions (title and worker) and omitted temperature, despite the serialized build configuration requesting zero. Custom-model temperature support defaults false in that harness, and title generation forks automatically. The adapter now disables auxiliary agents, subagents and automatic compaction, selects its primary explicitly, declares temperature support and sends zero by default. Task/skill/delegation tools are denied; output-token limits and protected acceptance criteria are preserved. Overflow remains failure rather than a hidden compaction call.
 
-The optional `scripts/harness-wire-smoke.mjs` checks the installed binary against synthetic completions only. Its worker and reviewer runs each observed exactly one primary request with temperature 0, correct tool permissions and completed output. This proves adapter wiring, not model capability. A subsequent real run requires the corrected packaged adapter and separate private metadata; no success is inferred from the context change.
+The optional `scripts/harness-wire-smoke.mjs` checks the installed binary against synthetic completions only. Its worker and reviewer runs each observed exactly one primary request with temperature 0, correct tool permissions and completed output. This proves adapter wiring, not model capability. It also passed in Linux/Node 24 CI; no success is inferred from the context change.
 
-Operator monitoring initially raced the corrected runner's empty-directory validation. That admission produced no cases/model calls and retained uncertainty; controller idle/no worker descendants were verified before reconciliation. The guard was preserved, monitoring moved outside runner-owned roots, and a separate corrected run was admitted. Outcomes remain pending.
+Operator monitoring initially raced the corrected runner's empty-directory validation. That admission produced no cases/model calls and retained uncertainty; controller idle/no worker descendants were verified before reconciliation. The guard was preserved, monitoring moved outside runner-owned roots, and a separate corrected run was admitted.
+
+The corrected single-inference run completed with stable 32,768-token metadata. All seven cases timed out at the unchanged three-minute case budget. Observed tools establish that the harness made progress; they do not substitute for completed work and independent verification.
+
+| Capability | Outcome | Observed rounds | Observed tool calls |
+| --- | --- | --- | --- |
+| Discovery | Timeout | 4 | 6 |
+| Read/search | Timeout | 4 | 7 |
+| Structured edit | Timeout | 7 | 8 |
+| Command | Timeout | 4 | 9 |
+| Tool error recovery | Timeout | 4 | 9 |
+| Test-driven repair | Timeout | 3 | 9 |
+| Multi-round/context | Timeout | 3 | 4 |
+
+The job completed without uncertainty and did not qualify the model. GPU weight placement is not exposed by the model catalog; decoding timings and GPU utilization alone cannot establish full offload. The owner offered Windows diagnostics, so a separate diagnostic repeat was admitted after upgrading the idle service to the final tested build. Loading settings and acceptance criteria were preserved. Its receipt and operator telemetry remain outside runner-owned directories and Git; outcomes are pending. No further automatic retries or profile promotion are implied.

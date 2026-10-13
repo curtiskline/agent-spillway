@@ -1,0 +1,11 @@
+# Tool workload v2
+
+Revision 2 changes only the discovery instruction to require the existing exact `docs/**` glob pattern explicitly. Protected executable fixtures, other case instructions, budgets and observation predicates are unchanged. Workload v1 assets and historical results remain preserved; no result is regraded.
+
+Original Apache-2.0 fixtures, with no third-party evaluation tasks or application data. The runner creates a new private Git repository for each of seven cases. It protects checks, expected fixtures, docs and tool scripts, allows source-only commits, and invokes the existing harness once per case (180 seconds including independent verification). No custom model loop or automatic repair is added.
+
+Checks prove the resulting source behavior. OpenCode `tool_use` events independently establish recognized file paths, exact direct script commands with known output/exit evidence, explicit failed-tool recovery and failure-before-edit-before-pass ordering. Echo/compound wrappers and marker strings in unrelated tool parameters cannot satisfy a capability. Multi-round requires at least three observed assistant rounds, a read/search of the actual ledger and at least 32,000 exposed context bytes; installed and observed byte counts are recorded separately. Its expected plaintext is only in the ledger, with a protected hash-based acceptance fixture. No final prose claim can replace observations. Missing, duplicate-key, malformed or truncated streams fail closed; repeated event IDs are deduplicated.
+
+The discovery case also requires the runner's exact model catalog/version preflight. Tool-workload qualification does not qualify a coding task class, change private profile permissions, or establish frontier savings. Fixtures cannot qualify. Real runs with missing exact artifact, license, harness/server version, context or hardware metadata remain observational. Workload results and raw transcripts stay private; reviewed public community projections exclude private identities, paths and URLs.
+
+Event shape reference: [OpenCode run implementation](https://github.com/anomalyco/opencode/blob/v1.19.0/packages/opencode/src/cli/cmd/run.ts), [command tool](https://github.com/anomalyco/opencode/blob/v1.19.0/packages/core/src/tool/bash.ts). Harness upgrades require confirming these observed event shapes again.

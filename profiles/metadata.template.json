@@ -1,0 +1,11 @@
+{
+  "model": null,
+  "modelArtifact": null,
+  "harnessVersion": null,
+  "serverVersion": null,
+  "license": null,
+  "contextTokens": null,
+  "hardware": null,
+  "serverEngine": null,
+  "settings": { "quantization": null, "temperature": null, "seed": null, "concurrency": 1 }
+}

@@ -1,0 +1,349 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*$",
+      "not": {
+        "pattern": "(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|(?:token|secret|password|credential)[_-]|[A-Fa-f0-9]{32,}|\\d+\\.\\d+\\.\\d+\\.\\d+"
+      }
+    },
+    "provenance": {
+      "const": "real"
+    },
+    "scope": {
+      "const": "tool-workload-only"
+    },
+    "qualified": {
+      "const": true
+    },
+    "qualified_classes": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "workloadHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*(?:/[A-Za-z][A-Za-z0-9.+_-]*)?$",
+          "not": {
+            "pattern": "^(?:home|Users|private|var|tmp|etc|Volumes)/|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|(?:token|secret|password|credential)[_-]|[A-Fa-f0-9]{32,}|\\d+\\.\\d+\\.\\d+\\.\\d+"
+          }
+        },
+        "modelArtifact": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "harnessVersion": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "serverVersion": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*$"
+        },
+        "contextTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "hardware": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpuCores": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "memoryGiB": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 65536
+            },
+            "gpuCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1024
+            },
+            "gpuMemoryGiB": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "memoryGiB"
+          ]
+        },
+        "serverEngine": {
+          "enum": [
+            "lm-studio",
+            "llama-cpp",
+            "ollama",
+            "vllm",
+            "sglang"
+          ]
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "quantization": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*$",
+              "not": {
+                "pattern": "(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|(?:token|secret|password|credential)[_-]|[A-Fa-f0-9]{32,}|\\d+\\.\\d+\\.\\d+\\.\\d+"
+              }
+            },
+            "temperature": {
+              "const": 0
+            },
+            "seed": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "concurrency": {
+              "const": 1
+            }
+          },
+          "required": [
+            "quantization",
+            "temperature",
+            "seed",
+            "concurrency"
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "modelArtifact",
+        "harnessVersion",
+        "serverVersion",
+        "license",
+        "contextTokens",
+        "hardware",
+        "serverEngine",
+        "settings"
+      ]
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "enum": [
+              "discovery",
+              "read-search",
+              "structured-edit",
+              "command",
+              "tool-error-recovery",
+              "test-driven-repair",
+              "multi-round"
+            ]
+          },
+          "outcome": {
+            "const": "passed"
+          },
+          "rounds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "observedTools": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "read",
+                "glob",
+                "grep",
+                "edit",
+                "write",
+                "apply_patch",
+                "bash"
+              ]
+            }
+          },
+          "durationMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "contextBytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "contextBytesObserved": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "capability",
+          "outcome",
+          "rounds",
+          "observedTools",
+          "durationMs",
+          "contextBytes",
+          "contextBytesObserved"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "capability": {
+                  "const": "multi-round"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "rounds": {
+                  "minimum": 3
+                },
+                "contextBytesObserved": {
+                  "minimum": 32000
+                }
+              }
+            }
+          }
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "capability": {
+                "const": "discovery"
+              }
+            },
+            "required": [
+              "capability"
+            ]
+          }
+        },
+        {
+          "contains": {
+            "properties": {
+              "capability": {
+                "const": "read-search"
+              }
+            },
+            "required": [
+              "capability"
+            ]
+          }
+        },
+        {
+          "contains": {
+            "properties": {
+              "capability": {
+                "const": "structured-edit"
+              }
+            },
+            "required": [
+              "capability"
+            ]
+          }
+        },
+        {
+          "contains": {
+            "properties": {
+              "capability": {
+                "const": "command"
+              }
+            },
+            "required": [
+              "capability"
+            ]
+          }
+        },
+        {
+          "contains": {
+            "properties": {
+              "capability": {
+                "const": "tool-error-recovery"
+              }
+            },
+            "required": [
+              "capability"
+            ]
+          }
+        },
+        {
+          "contains": {
+            "properties": {
+              "capability": {
+                "const": "test-driven-repair"
+              }
+            },
+            "required": [
+              "capability"
+            ]
+          }
+        },
+        {
+          "contains": {
+            "properties": {
+              "capability": {
+                "const": "multi-round"
+              }
+            },
+            "required": [
+              "capability"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "id",
+    "provenance",
+    "scope",
+    "qualified",
+    "qualified_classes",
+    "workloadHash",
+    "metadata",
+    "cases"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reviewed real tool-workload community profile v1",
+  "description": "No automatic task-class qualification or publication; runtime validator additionally verifies strict privacy identifiers and capability-specific observations."
+}

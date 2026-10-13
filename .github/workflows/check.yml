@@ -23,3 +23,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: node scripts/validate-community.mjs
+      - run: node scripts/onboarding-smoke.mjs
+      - name: Installed OpenCode wire contract (no provider inference)
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        run: |
+          wire_harness_dir="$RUNNER_TEMP/spillway-wire-harness"
+          npm install --prefix "$wire_harness_dir" --ignore-scripts --no-audit --no-fund opencode-ai@1.19.0
+          node "$wire_harness_dir/node_modules/opencode-ai/postinstall.mjs"
+          node scripts/harness-wire-smoke.mjs "$wire_harness_dir/node_modules/.bin/opencode"

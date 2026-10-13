@@ -18,14 +18,20 @@
     "examples",
     "LICENSE",
     "NOTICE",
-    "README.md"
+    "README.md",
+    "eval",
+    "profiles",
+    "scripts/harness-wire-smoke.mjs"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "validate:community": "npm run build && node scripts/validate-community.mjs",
+    "smoke:onboarding": "node scripts/onboarding-smoke.mjs",
+    "smoke:harness": "node scripts/harness-wire-smoke.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

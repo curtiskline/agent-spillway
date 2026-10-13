@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "license": "Apache-2.0",
+  "timeoutSeconds": 180,
+  "contextLines": 256,
+  "cases": [
+    { "id": "discovery", "expected": "catalog-ready", "instruction": "Discover the repository using the glob tool with the exact pattern docs/**, then read docs/inventory.json. Implement its discovery value in src/value.cjs." },
+    { "id": "read-search", "expected": "read-search-ready", "instruction": "Read docs/inventory.json and search docs/ledger.jsonl for target-seven using grep. Implement the read-search value in src/value.cjs." },
+    { "id": "structured-edit", "expected": { "status": "ready", "limit": 3 }, "instruction": "Use a structured edit/write/apply_patch tool to update src/value.cjs to return the structured-edit object in docs/inventory.json. Preserve its object fields exactly." },
+    { "id": "command", "expected": "command-ready", "instruction": "Run node tools/echo.cjs through the command tool, observe its success, then implement the command value in src/value.cjs." },
+    { "id": "tool-error-recovery", "expected": "recovery-ready", "instruction": "Run node tools/failure.cjs and observe its deliberate exit 17. Recover by running node tools/recover.cjs successfully, then implement the tool-error-recovery value in src/value.cjs. The first failure is required evidence, not a reason to stop." },
+    { "id": "test-driven-repair", "expected": "repair-ready", "instruction": "Run node checks/acceptance.cjs before editing and observe the failing assertion. Use an edit/write/apply_patch tool to implement the test-driven-repair value in src/value.cjs, then run the same protected check again successfully." },
+    { "id": "multi-round", "expected": "multi-round-ready", "instruction": "Work across at least three assistant/tool rounds. Read docs/inventory.json, search the realistic ledger for target-seven, inspect the matching context, use an edit/write/apply_patch tool to implement the multi-round value in src/value.cjs, and run node checks/acceptance.cjs successfully. Do not batch every operation into one tool round." }
+  ]
+}

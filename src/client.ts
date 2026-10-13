@@ -29,6 +29,7 @@ const object = (value: unknown): value is Record<string, unknown> =>
 const publicErrorCodes = new Set([
   "busy",
   "BUSY",
+  "SHUTTING_DOWN",
   "NOT_FOUND",
   "NOT_READY",
   "NO_ATTEMPT",
@@ -82,6 +83,19 @@ const publicErrorCodes = new Set([
   "PROMPT_TOO_LARGE",
   "STALE_ATTEMPT",
   "STALE_REVIEW",
+  "AUDIT_COMPLETE",
+  "STALE_AUDIT",
+  "QUALIFICATION_UNCERTAIN",
+  "invalid_decision",
+  "invalid_audit",
+  "immutable_audit",
+  "invalid_usage",
+  "PUBLICATION_DENIED",
+  "INVALID_PUBLIC_MANIFEST",
+  "INVALID_EXPORT_SOURCE",
+  "invalid_export",
+  "QUALIFICATION_RESULT",
+  "unsafe_export",
   "VERIFICATION_FAILED",
   "database_state",
   "duplicate_review",
@@ -204,15 +218,23 @@ export class ServiceClient {
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(
-          path === "/api/v1/run" || path.endsWith("/frontier-complete")
+          path === "/api/v1/run" ||
+            path === "/api/v1/qualify" ||
+            path.endsWith("/frontier-complete")
             ? 24 * 60 * 60 * 1000
-            : 5000,
+            : [
+                  "/api/v1/export",
+                  "/api/v1/endpoints",
+                  "/api/v1/evidence/sync",
+                ].includes(path)
+              ? 30000
+              : 5000,
         ),
       });
     } catch {
       throw new SpillwayError(
         "service_unavailable",
-        "Spillway service is unavailable. Start or restart spillway serve.",
+        "The service connection was interrupted. Check Spillway status before retrying or restarting; execution may still be running.",
         503,
       );
     }

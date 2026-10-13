@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
 import { identifier, relativePath } from "./task.js";
+import { policySchema } from "./policy.js";
 import {
   TASK_STATES,
   SpillwayError,
@@ -24,6 +25,8 @@ import {
   type AttemptPatch,
   type EventRecord,
   type NextAction, type NewReview, type ReviewPatch, type ReviewRecord, type FrontierState,
+  type TaskAdmission, type DecisionRecord, type AuditRecord, type PlanningUsageRecord,
+  type EvidenceRecord, type ReportSnapshot, type Usage, type QualificationJobRecord,
 } from "./contracts.js";
 
 const transitions: Record<TaskState, readonly TaskState[]> = {
@@ -67,9 +70,9 @@ const verification = z
       z
         .object({
           command: z.string(),
-          exitCode: z.number().int().nullable(),
+          exitCode: z.number().finite().int().nullable(),
           timedOut: z.boolean(),
-          durationMs: z.number().nonnegative(),
+          durationMs: z.number().finite().nonnegative(),
           logPath: z.string(),
         })
         .strict(),
@@ -83,9 +86,9 @@ const patchSchema = z
     outcome: outcomes.optional(),
     usage: z
       .object({
-        inputTokens: z.number().int().nonnegative().optional(),
-        outputTokens: z.number().int().nonnegative().optional(),
-        costUsd: z.number().nonnegative().optional(),
+        inputTokens: z.number().finite().int().nonnegative().optional(),
+        outputTokens: z.number().finite().int().nonnegative().optional(),
+        costUsd: z.number().finite().nonnegative().optional(),
       })
       .strict()
       .nullable()
@@ -112,7 +115,7 @@ const attemptSchema = z
     worktree: z.string(),
     logPath: z.string(),
     kind: z.enum(['worker', 'repair', 'frontier']).optional(),
-    parentAttemptId: z.number().int().positive().optional(),
+    parentAttemptId: z.number().finite().int().positive().optional(),
   })
   .strict();
 
@@ -121,7 +124,8 @@ const sha = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 const reportSchema = z.object({ resultSha: sha, verdict: z.enum(['accept', 'needs-repair', 'reject']),
   findings: z.array(z.object({ severity: z.enum(['blocking','warning']), message: z.string().trim().min(1).max(4000), path: relativePath.optional() }).strict()).max(50),
 }).strict().refine(report => report.verdict !== 'accept' || !report.findings.some(finding => finding.severity === 'blocking'), 'An accepting review cannot contain blocking findings');
-const newReviewSchema = z.object({ taskId: identifier, attemptId: z.number().int().positive(), tier: z.enum(['local','frontier']),
+const newReviewSchema = z.object({ taskId: identifier, attemptId: z.number().finite().int().positive(), tier: z.enum(['local','frontier']),
+  modelArtifact: z.string().min(1).max(4096).optional(), harness: z.string().min(1).max(200).optional(), harnessVersion: z.string().min(1).max(200).optional(),
   source: z.enum(['service-local','owner-session']), profileId: identifier.optional(), model: z.string().min(1).max(4096).optional(), resultSha: sha, logPath: z.string().optional(),
 }).strict().refine(input => (input.source === 'owner-session') === (input.tier === 'frontier'), 'Owner sessions must provide frontier reviews; service reviews must be local');
 const reviewPatchSchema = z.object({ outcome: z.enum(['completed','failed','uncertain']).optional(), report: reportSchema.nullable().optional(),
@@ -146,6 +150,10 @@ function taskRecord(row: Row): TaskRecord {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
     nextAction: row.next_action == null ? null : nextActions.parse(row.next_action),
+    origin: z.enum(['ordinary','qualification']).parse(row.origin ?? 'ordinary'),
+    readyAt: row.ready_at == null ? null : String(row.ready_at),
+    completedWhileFrontierOff: row.completed_frontier_off == null ? null : Boolean(row.completed_frontier_off),
+    policySnapshot: row.policy_snapshot == null ? null : policySchema.parse(json<unknown>(row.policy_snapshot)),
   };
 }
 function attemptRecord(row: Row): AttemptRecord {
@@ -181,7 +189,7 @@ function attemptRecord(row: Row): AttemptRecord {
   };
 }
 function reviewRecord(row: Row): ReviewRecord {
-  return { id: Number(row.id), taskId: String(row.task_id), attemptId: Number(row.attempt_id),
+  return { modelArtifact: row.model_artifact == null ? null : String(row.model_artifact), harness: row.harness == null ? null : String(row.harness), harnessVersion: row.harness_version == null ? null : String(row.harness_version), id: Number(row.id), taskId: String(row.task_id), attemptId: Number(row.attempt_id),
     tier: z.enum(['local','frontier']).parse(row.tier), source: z.enum(['service-local','owner-session']).parse(row.source),
     profileId: row.profile_id === null ? null : String(row.profile_id), model: row.model === null ? null : String(row.model),
     resultSha: sha.parse(row.result_sha), outcome: z.enum(['running','completed','failed','uncertain']).parse(row.outcome),
@@ -190,6 +198,17 @@ function reviewRecord(row: Row): ReviewRecord {
     logPath: row.log_path === null ? null : String(row.log_path), startedAt: String(row.started_at),
     endedAt: row.ended_at === null ? null : String(row.ended_at), reason: row.reason === null ? null : String(row.reason) };
 }
+function decisionRecord(row: Row): DecisionRecord {
+  return { taskId: String(row.task_id), decision: z.enum(['accepted','rejected']).parse(row.decision), resultSha: sha.parse(row.result_sha), reviewTier: tiers.parse(row.review_tier), ownerMinutes: row.owner_minutes === null ? null : Number(row.owner_minutes), decidedAt: String(row.decided_at) };
+}
+function auditRecord(row: Row): AuditRecord {
+  return { id: Number(row.id), taskId: String(row.task_id), attemptId: Number(row.attempt_id), resultSha: sha.parse(row.result_sha), reviewTier: z.enum(['checks-only','local']).parse(row.review_tier), status: z.enum(['pending','completed']).parse(row.status), report: row.report === null ? null : reportSchema.parse(json<unknown>(row.report)), model: row.model === null ? null : String(row.model), usage: row.usage === null ? null : patchSchema.shape.usage.parse(json<unknown>(row.usage)) ?? null, createdAt: String(row.created_at), completedAt: row.completed_at === null ? null : String(row.completed_at) };
+}
+function planningRecord(row: Row): PlanningUsageRecord {
+  return { id: Number(row.id), taskId: String(row.task_id), usage: usageSchema.parse(json<unknown>(row.usage)), createdAt: String(row.created_at) };
+}
+const usageSchema = z.object({ inputTokens: z.number().finite().int().nonnegative().optional(), outputTokens: z.number().finite().int().nonnegative().optional(), costUsd: z.number().finite().nonnegative().optional() }).strict().refine(usage => Object.values(usage).some(value => value !== undefined),'Reported usage must contain at least one value');
+const admissionSchema = z.object({ origin: z.enum(['ordinary','qualification']).optional(), policySnapshot: policySchema.optional() }).strict();
 function contained(path: string, root: string): boolean {
   const rel = relative(root, path);
   return (
@@ -248,12 +267,14 @@ function privateDirectory(input: string): string {
 /** Only the controller opens the store. Each mutation and corresponding event commit together. */
 export class Store {
   private readonly db: DatabaseSync;
+  readonly dataDir: string;
   private inTransaction = false;
   constructor(dataDir: string) {
-    const path = join(privateDirectory(dataDir), "queue.sqlite");
+    this.dataDir = privateDirectory(dataDir);
+    const path = join(this.dataDir, "queue.sqlite");
     if (
       existsSync(path) &&
-      (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink())
+      (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink() || lstatSync(path).nlink !== 1)
     )
       throw new SpillwayError(
         "unsafe_data_path",
@@ -267,7 +288,7 @@ export class Store {
     const version = Number(
       this.db.prepare("PRAGMA user_version").get()?.user_version,
     );
-    if (version > 3) {
+    if (version > 4) {
       this.db.close();
       throw new SpillwayError(
         "database_version",
@@ -316,6 +337,30 @@ export class Store {
             AND a.outcome='completed' AND a.result_sha IS NOT NULL AND json_extract(a.verification,'$.passed')=1);
         PRAGMA user_version=3;`);
       this.db.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('frontier', JSON.stringify({ available: false, resetAt: null, updatedAt: now() }));
+    });
+    if (version < 4) this.transaction(() => {
+      this.db.exec(`ALTER TABLE tasks ADD COLUMN origin TEXT NOT NULL DEFAULT 'ordinary' CHECK(origin IN ('ordinary','qualification'));
+        ALTER TABLE tasks ADD COLUMN ready_at TEXT;
+        ALTER TABLE tasks ADD COLUMN completed_frontier_off INTEGER CHECK(completed_frontier_off IN (0,1));
+        ALTER TABLE tasks ADD COLUMN policy_snapshot TEXT;
+        ALTER TABLE reviews ADD COLUMN model_artifact TEXT;
+        ALTER TABLE reviews ADD COLUMN harness TEXT;
+        ALTER TABLE reviews ADD COLUMN harness_version TEXT;
+        CREATE TABLE decisions (task_id TEXT PRIMARY KEY REFERENCES tasks(id), decision TEXT NOT NULL CHECK(decision IN ('accepted','rejected')),
+          result_sha TEXT NOT NULL, review_tier TEXT NOT NULL CHECK(review_tier IN ('checks-only','local','frontier')),owner_minutes REAL CHECK(owner_minutes>=0),decided_at TEXT NOT NULL);
+        CREATE TABLE audits (id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT NOT NULL REFERENCES tasks(id),attempt_id INTEGER NOT NULL REFERENCES attempts(id),
+          result_sha TEXT NOT NULL,review_tier TEXT NOT NULL CHECK(review_tier IN ('checks-only','local')),status TEXT NOT NULL CHECK(status IN ('pending','completed')),
+          report TEXT,model TEXT,usage TEXT,created_at TEXT NOT NULL,completed_at TEXT,UNIQUE(task_id,result_sha));
+        CREATE TABLE planning_usage (id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT NOT NULL REFERENCES tasks(id),usage TEXT NOT NULL,created_at TEXT NOT NULL);
+        CREATE TABLE qualification_jobs (id TEXT PRIMARY KEY,profile_id TEXT NOT NULL,root TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('running','completed','failed','uncertain')),
+          started_at TEXT NOT NULL,ended_at TEXT,result_path TEXT,reason TEXT,reconciled_at TEXT);
+        CREATE UNIQUE INDEX one_active_qualification ON qualification_jobs((1)) WHERE status='running';
+        CREATE TABLE evidence_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,task_id TEXT REFERENCES tasks(id),created_at TEXT NOT NULL,
+          provenance TEXT NOT NULL CHECK(provenance IN ('service','legacy-snapshot')),data TEXT NOT NULL,delivered INTEGER NOT NULL DEFAULT 0 CHECK(delivered IN (0,1)));
+        PRAGMA user_version=4;`);
+      for (const task of this.listTasks()) this.appendEvidence('legacy-task-snapshot',task.id,this.taskEvidence(task.id),'legacy-snapshot');
+      const settings = this.db.prepare('SELECT key,value FROM settings ORDER BY key').all().map(row => ({ key: String(row.key),value: json<unknown>(row.value) }));
+      this.appendEvidence(version === 0 ? 'settings-initialized' : 'legacy-settings-snapshot',null,{ settings },version === 0 ? 'service' : 'legacy-snapshot');
     });
   }
   close(): void {
@@ -380,16 +425,19 @@ export class Store {
         "INSERT INTO events(task_id,type,payload,created_at) VALUES(?,?,?,?)",
       )
       .run(taskId, type, value, now());
+    this.appendEvidence(type,taskId,{ event: { type,payload: JSON.parse(value) as unknown },...this.taskEvidence(taskId) });
   }
   addTask(
     spec: TaskSpec,
     raw: string,
     profileId: string,
     reviewTier: ReviewTier,
+    admission: TaskAdmission = {},
   ): TaskRecord {
     identifier.parse(spec.id);
     identifier.parse(profileId);
     tiers.parse(reviewTier);
+    const metadata = admissionSchema.parse(admission);
     return this.transaction(() => {
       if (this.getTask(spec.id))
         throw new SpillwayError(
@@ -413,7 +461,7 @@ export class Store {
       const timestamp = now();
       this.db
         .prepare(
-          "INSERT INTO tasks(id,spec,raw,profile_id,review_tier,state,created_at,updated_at,next_action) VALUES(?,?,?,?,?,?,?,?,'worker')",
+          "INSERT INTO tasks(id,spec,raw,profile_id,review_tier,state,created_at,updated_at,next_action,origin,policy_snapshot) VALUES(?,?,?,?,?,?,?,?,'worker',?,?)",
         )
         .run(
           spec.id,
@@ -424,6 +472,8 @@ export class Store {
           "queued",
           timestamp,
           timestamp,
+          metadata.origin ?? 'ordinary',
+          metadata.policySnapshot ? JSON.stringify(metadata.policySnapshot) : null,
         );
       for (const id of spec.after)
         this.db
@@ -454,6 +504,7 @@ export class Store {
     z.enum(TASK_STATES).parse(state); nextActions.nullable().parse(nextAction);
     this.transaction(() => {
       const task = this.requireTask(id);
+      if (state === task.state && nextAction === task.nextAction && (reason ?? null) === task.reason && (!reviewTier || reviewTier === task.reviewTier)) return;
       if (state !== task.state && !transitions[task.state].includes(state)) throw new SpillwayError('invalid_transition', `Cannot transition ${task.state} to ${state}`, 409);
       if (['ready','accepted','rejected','abandoned','failed','dispatched','verifying'].includes(state) && nextAction !== null) throw new SpillwayError('invalid_action', 'This task state cannot have pending execution');
       if (state === 'queued' && !['worker','repair'].includes(nextAction ?? '')) throw new SpillwayError('invalid_action', 'Queued tasks require a worker or repair action');
@@ -461,7 +512,12 @@ export class Store {
       if (nextAction === 'frontier-worker' && !['held','escalated'].includes(state)) throw new SpillwayError('invalid_action', 'Frontier work requires held or escalated state');
       if (['accepted','rejected','abandoned'].includes(task.state) && (state !== task.state || nextAction !== null)) throw new SpillwayError('invalid_transition','Decided tasks are immutable',409);
       if (reviewTier) this.setTaskReview(id,reviewTier);
-      this.db.prepare('UPDATE tasks SET state=?,next_action=?,reason=?,updated_at=? WHERE id=?').run(state,nextAction,reason ?? null,now(),id);
+      const timestamp = now();
+      if (state === 'ready' && task.state !== 'ready') {
+        const frontier = this.getFrontierState();
+        this.db.prepare('UPDATE tasks SET ready_at=?,completed_frontier_off=? WHERE id=?').run(timestamp,frontier.available ? 0 : 1,id);
+      }
+      this.db.prepare('UPDATE tasks SET state=?,next_action=?,reason=?,updated_at=? WHERE id=?').run(state,nextAction,reason ?? null,timestamp,id);
       this.event(id,'state_changed',{ from: task.state,to: state,nextAction,reason: reason ?? null });
     });
   }
@@ -479,6 +535,7 @@ export class Store {
           "Review requirements cannot be weakened or changed after a decision",
           409,
         );
+      if (tier === task.reviewTier) return;
       this.db
         .prepare("UPDATE tasks SET review_tier=?,updated_at=? WHERE id=?")
         .run(tier, now(), id);
@@ -486,11 +543,11 @@ export class Store {
     });
   }
   private assertExecutionSlot(): void {
-    if (this.db.prepare("SELECT id FROM attempts WHERE outcome='running' UNION ALL SELECT id FROM reviews WHERE outcome='running'").get()) throw new SpillwayError('busy','An attempt or review is already active',409);
+    if (this.db.prepare("SELECT id FROM attempts WHERE outcome='running' UNION ALL SELECT id FROM reviews WHERE outcome='running' UNION ALL SELECT id FROM qualification_jobs WHERE status='running'").get()) throw new SpillwayError('busy','An attempt or review is already active',409);
     if (this.hasUnresolvedExecution()) throw new SpillwayError('busy','Interrupted execution requires owner reconciliation',409);
   }
   hasUnresolvedExecution(): boolean {
-    return Boolean(this.db.prepare("SELECT a.id FROM attempts a JOIN tasks t ON t.id=a.task_id WHERE a.outcome='uncertain' AND t.state NOT IN ('abandoned','rejected','accepted') UNION ALL SELECT r.id FROM reviews r JOIN tasks t ON t.id=r.task_id WHERE r.outcome='uncertain' AND t.state NOT IN ('abandoned','rejected','accepted')").get());
+    return Boolean(this.db.prepare("SELECT a.id FROM attempts a JOIN tasks t ON t.id=a.task_id WHERE a.outcome='uncertain' AND t.state NOT IN ('abandoned','rejected','accepted') UNION ALL SELECT r.id FROM reviews r JOIN tasks t ON t.id=r.task_id WHERE r.outcome='uncertain' AND t.state NOT IN ('abandoned','rejected','accepted') UNION ALL SELECT id FROM qualification_jobs WHERE status='uncertain' AND reconciled_at IS NULL").get());
   }
   createAttempt(input: NewAttempt): AttemptRecord {
     const value = attemptSchema.parse(input);
@@ -600,6 +657,10 @@ export class Store {
         this.db.prepare("UPDATE tasks SET state='held',next_action=NULL,reason='Interrupted review requires inspection',updated_at=? WHERE id=?").run(timestamp,review.taskId);
         this.event(review.taskId,'review_uncertain',{ reviewId: review.id });
       }
+      for (const job of this.listQualificationJobs().filter(job => job.status === 'running')) {
+        this.db.prepare("UPDATE qualification_jobs SET status='uncertain',ended_at=?,reason='Interrupted qualification requires owner reconciliation' WHERE id=?").run(now(),job.id);
+        this.appendEvidence('qualification-uncertain',null,{ job: this.getQualificationJob(job.id) });
+      }
       // Older interrupted versions may have finalized evidence before parent state.
       const stranded = this.db
         .prepare(
@@ -662,7 +723,7 @@ export class Store {
       this.assertExecutionSlot();
       if (this.db.prepare('SELECT id FROM reviews WHERE attempt_id=? AND tier=?').get(value.attemptId,value.tier)) throw new SpillwayError('duplicate_review','This attempt already has a review at this tier',409);
       const timestamp = now();
-      const result = this.db.prepare("INSERT INTO reviews(task_id,attempt_id,tier,source,profile_id,model,result_sha,outcome,log_path,started_at) VALUES(?,?,?,?,?,?,?,'running',?,?)").run(task.id,value.attemptId,value.tier,value.source,value.profileId ?? null,value.model ?? null,value.resultSha,value.logPath ?? null,timestamp);
+      const result = this.db.prepare("INSERT INTO reviews(task_id,attempt_id,tier,source,profile_id,model,result_sha,outcome,log_path,started_at,model_artifact,harness,harness_version) VALUES(?,?,?,?,?,?,?,'running',?,?,?,?,?)").run(task.id,value.attemptId,value.tier,value.source,value.profileId ?? null,value.model ?? null,value.resultSha,value.logPath ?? null,timestamp,value.modelArtifact ?? null,value.harness ?? null,value.harnessVersion ?? null);
       const id = Number(result.lastInsertRowid);
       this.setTaskAction(task.id,'reviewing','review');
       this.event(task.id,'review_started',{ reviewId: id, attemptId: value.attemptId, tier: value.tier, source: value.source });
@@ -723,12 +784,132 @@ export class Store {
     const state = { available, resetAt, updatedAt: now() };
     this.db.prepare("UPDATE settings SET value=? WHERE key='frontier'").run(JSON.stringify(state));
     this.db.prepare('INSERT INTO setting_events(type,payload,created_at) VALUES(?,?,?)').run(type,JSON.stringify(state),state.updatedAt);
+    this.appendEvidence(type,null,{ frontier: state });
     return state;
   }
   setFrontierState(available: boolean, resetAt: string | null = null): FrontierState {
     z.boolean().parse(available); z.string().datetime({ offset: true }).nullable().parse(resetAt);
     if (available && resetAt !== null) throw new SpillwayError('invalid_frontier','Reset schedule applies only while frontier is unavailable');
     return this.transaction(() => this.writeFrontierState(available,resetAt,'frontier_changed'));
+  }
+
+  createQualificationJob(input: {id: string; profileId: string; root: string}): QualificationJobRecord {
+    const valid = z.object({ id: identifier,profileId: identifier,root: z.string().min(1) }).strict().parse(input);
+    return this.transaction(() => {
+      this.assertExecutionSlot();
+      if (this.getQualificationJob(valid.id)) throw new SpillwayError('duplicate_job','Qualification job already exists',409);
+      const root = canonicalFuture(resolve(valid.root));
+      if (root === this.dataDir || !contained(root,this.dataDir)) throw new SpillwayError('unsafe_data_path','Qualification root must be inside the private data directory');
+      privateDirectory(root);
+      this.db.prepare("INSERT INTO qualification_jobs(id,profile_id,root,status,started_at) VALUES(?,?,?,'running',?)").run(valid.id,valid.profileId,root,now());
+      const job = this.getQualificationJob(valid.id)!; this.appendEvidence('qualification-started',null,{ job }); return job;
+    });
+  }
+  getQualificationJob(id: string): QualificationJobRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM qualification_jobs WHERE id=?').get(id);
+    return row ? { id: String(row.id),profileId: String(row.profile_id),root: String(row.root),status: z.enum(['running','completed','failed','uncertain']).parse(row.status),startedAt: String(row.started_at),endedAt: row.ended_at === null ? null : String(row.ended_at),resultPath: row.result_path === null ? null : String(row.result_path),reason: row.reason === null ? null : String(row.reason),reconciledAt: row.reconciled_at === null ? null : String(row.reconciled_at) } : undefined;
+  }
+  listQualificationJobs(): QualificationJobRecord[] { return this.db.prepare('SELECT id FROM qualification_jobs ORDER BY started_at,id').all().map(row => this.getQualificationJob(String(row.id))!); }
+  finishQualificationJob(id: string, status: 'completed' | 'failed' | 'uncertain', resultPath?: string, reason?: string): void {
+    z.enum(['completed','failed','uncertain']).parse(status);
+    this.transaction(() => {
+      const job = this.getQualificationJob(id); if (!job) throw new SpillwayError('not_found','Qualification job does not exist',404);
+      if (job.status !== 'running') throw new SpillwayError('immutable_job','Finalized qualification cannot be rewritten',409);
+      let path: string | null = null;
+      if (resultPath !== undefined) { path = canonicalFuture(resolve(resultPath)); if (!contained(path,job.root) || path === job.root) throw new SpillwayError('unsafe_data_path','Qualification result must stay inside its private root'); }
+      this.db.prepare('UPDATE qualification_jobs SET status=?,ended_at=?,result_path=?,reason=? WHERE id=?').run(status,now(),path,reason ?? null,id);
+      this.appendEvidence('qualification-finished',null,{ job: this.getQualificationJob(id) });
+    });
+  }
+  reconcileQualificationJob(id: string): void {
+    this.transaction(() => {
+      const job = this.getQualificationJob(id); if (!job) throw new SpillwayError('not_found','Qualification job does not exist',404);
+      if (job.status !== 'uncertain' || job.reconciledAt !== null) throw new SpillwayError('invalid_transition','Only unreconciled interrupted qualification can be reconciled',409);
+      this.db.prepare('UPDATE qualification_jobs SET reconciled_at=? WHERE id=?').run(now(),id);
+      this.appendEvidence('qualification-reconciled',null,{ job: this.getQualificationJob(id),workerStopped: true });
+    });
+  }
+  private taskEvidence(taskId: string): Record<string, unknown> {
+    return { task: this.requireTask(taskId), attempts: this.listAttempts(taskId), reviews: this.listReviews(taskId), audits: this.listAudits(taskId), decision: this.getDecision(taskId) ?? null,
+      planning: this.db.prepare('SELECT * FROM planning_usage WHERE task_id=? ORDER BY id').all(taskId).map(planningRecord) };
+  }
+  private appendEvidence(kind: string, taskId: string | null, data: unknown, provenance: EvidenceRecord['provenance'] = 'service'): void {
+    const serialized = JSON.stringify(data);
+    if (serialized === undefined) throw new SpillwayError('invalid_evidence','Evidence must be JSON');
+    this.db.prepare('INSERT INTO evidence_outbox(kind,task_id,created_at,provenance,data) VALUES(?,?,?,?,?)').run(kind,taskId,now(),provenance,serialized);
+  }
+  recordDecision(taskId: string, decision: 'accepted' | 'rejected', resultSha: string, ownerMinutes: number | null, selectAudit: boolean): DecisionRecord {
+    z.enum(['accepted','rejected']).parse(decision); sha.parse(resultSha); z.number().finite().finite().nonnegative().nullable().parse(ownerMinutes); z.boolean().parse(selectAudit);
+    return this.transaction(() => {
+      const task = this.requireTask(taskId);
+      if (task.state !== 'ready' || this.getDecision(taskId)) throw new SpillwayError('invalid_decision','Owner decision requires an undecided ready task',409);
+      const latest = this.listAttempts(taskId).at(-1);
+      this.latestVerified(taskId,latest?.id ?? 0,resultSha);
+      if (latest!.verification!.resultSha !== resultSha) throw new SpillwayError('invalid_decision','Decision requires the exact independently verified commit',409);
+      if (task.reviewTier !== 'checks-only' && !this.listReviews(taskId).some(review => review.attemptId === latest!.id && review.tier === task.reviewTier && review.outcome === 'completed' && review.resultSha === resultSha && review.report?.resultSha === resultSha && review.report.verdict === 'accept')) throw new SpillwayError('invalid_decision','Current required review has not approved this commit',409);
+      const timestamp = now();
+      this.db.prepare('INSERT INTO decisions(task_id,decision,result_sha,review_tier,owner_minutes,decided_at) VALUES(?,?,?,?,?,?)').run(taskId,decision,resultSha,task.reviewTier,ownerMinutes,timestamp);
+      if (decision === 'accepted' && selectAudit && task.origin !== 'qualification' && task.reviewTier !== 'frontier') {
+        this.db.prepare("INSERT INTO audits(task_id,attempt_id,result_sha,review_tier,status,created_at) VALUES(?,?,?,?,'pending',?)").run(taskId,latest!.id,resultSha,task.reviewTier,timestamp);
+      }
+      this.setTaskAction(taskId,decision,null);
+      this.event(taskId,'owner-decision',{ decision,resultSha,ownerMinutes,selectedAudit: this.listAudits(taskId).length > 0 });
+      return this.getDecision(taskId)!;
+    });
+  }
+  getDecision(taskId: string): DecisionRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM decisions WHERE task_id=?').get(taskId); return row ? decisionRecord(row) : undefined;
+  }
+  listDecisions(): DecisionRecord[] { return this.db.prepare('SELECT * FROM decisions ORDER BY decided_at,task_id').all().map(decisionRecord); }
+  listAudits(taskId?: string): AuditRecord[] {
+    return (taskId === undefined ? this.db.prepare('SELECT * FROM audits ORDER BY id').all() : this.db.prepare('SELECT * FROM audits WHERE task_id=? ORDER BY id').all(taskId)).map(auditRecord);
+  }
+  getAudit(id: number): AuditRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM audits WHERE id=?').get(id); return row ? auditRecord(row) : undefined;
+  }
+  finishAudit(id: number, report: import('./contracts.js').ReviewReport, meta: {model?: string; usage?: Usage} = {}): AuditRecord {
+    const valid = reportSchema.parse(report);
+    const metadata = z.object({ model: z.string().trim().min(1).max(200).optional(), usage: usageSchema.optional() }).strict().parse(meta);
+    return this.transaction(() => {
+      const audit = this.getAudit(id); if (!audit) throw new SpillwayError('not_found','Audit does not exist',404);
+      if (audit.status !== 'pending') throw new SpillwayError('immutable_audit','Completed audit cannot be rewritten',409);
+      const decision = this.getDecision(audit.taskId);
+      if (this.requireTask(audit.taskId).state !== 'accepted' || decision?.decision !== 'accepted' || decision.resultSha !== audit.resultSha || valid.resultSha !== audit.resultSha) throw new SpillwayError('stale_audit','Audit must match the immutable accepted result',409);
+      const attempt = this.getAttempt(audit.attemptId);
+      if (!attempt?.verification?.passed || attempt.resultSha !== audit.resultSha || attempt.verification.resultSha !== audit.resultSha) throw new SpillwayError('invalid_audit','Audit requires independently verified accepted evidence',409);
+      this.db.prepare("UPDATE audits SET status='completed',report=?,model=?,usage=?,completed_at=? WHERE id=?").run(JSON.stringify(valid),metadata.model ?? null,metadata.usage ? JSON.stringify(metadata.usage) : null,now(),id);
+      this.event(audit.taskId,'audit-completed',{ auditId: id,verdict: valid.verdict,source: 'owner-session' });
+      return this.getAudit(id)!;
+    });
+  }
+  addPlanningUsage(taskId: string, usage: Usage): PlanningUsageRecord {
+    const valid = usageSchema.parse(usage);
+    return this.transaction(() => {
+      this.requireTask(taskId);
+      const result = this.db.prepare('INSERT INTO planning_usage(task_id,usage,created_at) VALUES(?,?,?)').run(taskId,JSON.stringify(valid),now());
+      const record = planningRecord(this.db.prepare('SELECT * FROM planning_usage WHERE id=?').get(Number(result.lastInsertRowid))!);
+      this.event(taskId,'planning-usage',{ planningUsageId: record.id,role: 'planning',source: 'owner-session',usage: valid });
+      return record;
+    });
+  }
+  listPlanningUsage(): PlanningUsageRecord[] { return this.db.prepare('SELECT * FROM planning_usage ORDER BY id').all().map(planningRecord); }
+  reportSnapshot(): ReportSnapshot {
+    return this.transaction(() => ({ tasks: this.listTasks().map(task => ({ task,attempts: this.listAttempts(task.id),reviews: this.listReviews(task.id),events: this.listEvents(task.id),audits: this.listAudits(task.id) })),decisions: this.listDecisions(),audits: this.listAudits(),planning: this.listPlanningUsage(),generatedAt: now() }));
+  }
+  listEvidence(afterId = 0, limit = 100): EvidenceRecord[] {
+    z.number().finite().int().nonnegative().safe().parse(afterId); z.number().finite().int().min(1).max(1000).parse(limit);
+    return this.db.prepare('SELECT * FROM evidence_outbox WHERE id>? ORDER BY id LIMIT ?').all(afterId,limit).map(row => ({ version: 1,id: Number(row.id),kind: String(row.kind),taskId: row.task_id === null ? null : String(row.task_id),createdAt: String(row.created_at),provenance: z.enum(['service','legacy-snapshot']).parse(row.provenance),data: json<unknown>(row.data) }));
+  }
+  acknowledgeEvidence(throughId: number): void {
+    z.number().finite().int().positive().safe().parse(throughId);
+    this.transaction(() => {
+      if (!this.db.prepare('SELECT id FROM evidence_outbox WHERE id=?').get(throughId)) throw new SpillwayError('invalid_evidence','Acknowledgement must name an existing evidence prefix');
+      this.db.prepare('UPDATE evidence_outbox SET delivered=1 WHERE id<=?').run(throughId);
+    });
+  }
+  evidenceCounts(): {pending: number; delivered: number} {
+    const row = this.db.prepare('SELECT SUM(CASE WHEN delivered=0 THEN 1 ELSE 0 END) AS pending,SUM(CASE WHEN delivered=1 THEN 1 ELSE 0 END) AS delivered FROM evidence_outbox').get()!;
+    return { pending: Number(row.pending ?? 0),delivered: Number(row.delivered ?? 0) };
   }
 
   addEvent(taskId: string, type: string, payload: unknown): void {

@@ -27,3 +27,7 @@ Root adds `Controller.qualificationDiagnostics(id)`, bearer-only `GET /api/v1/qu
 | E34 | E33 / independent read-only security review + root | Authentication/private file/data integrity review; fix findings, full lint/type/test/build, package/wire smoke, saved historical observation parity, CI and secret scan; durable report and reviewable PR. |
 
 E31 and E32 are concurrent with disjoint files. No agent commits, provider calls, service upgrades or shared file edits without root coordination. Remaining external gates are reliable complete real model qualification, owner-accepted ordinary pilot/audit, authorized live Claude onboarding, actual Linux service onboarding and explicit publication/release. No automatic retry is scheduled.
+
+## Verification checkpoint
+
+E30–E34 implemented with clients and execution agents plus independent security review. Full 519 tests/40 files, strict types/lint/build, isolated source/package onboarding and installed-harness fixture wire checks pass. The null-suite response inconsistency was fixed before completion. Six saved real reports/42 logs across all supported revisions reproduce prior observations exactly; result/log bytes and model outcomes remain unchanged. Code head276469c passes Linux Node22/24, macOS Node24 and secrets CI. The idle private service upgrade preserves queue/evidence/history and provides the new CLI/dashboard views without inference. External acceptance, qualification, live onboarding and release gates remain open.

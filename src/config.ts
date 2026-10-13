@@ -11,6 +11,18 @@ import { validateCredentialFile } from "./credentials.js";
 import { SpillwayError, type SpillwayConfig } from "./contracts.js";
 
 const execute = promisify(execFile);
+const gitEnvironment = () => ({
+  PATH: process.env.PATH,
+  LC_ALL: "C",
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_TERMINAL_PROMPT: "0",
+  GIT_DISCOVERY_ACROSS_FILESYSTEM: "1",
+});
+const gitArgs = (path: string, query: string) => [
+  "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+  "-C", path, "rev-parse", query,
+];
 const nonempty = z.string().trim().min(1).max(4096);
 const schema = z
   .object({
@@ -70,7 +82,7 @@ const schema = z
             model_artifact: nonempty,
             harness: z.literal("opencode"),
             harness_version: nonempty,
-            qualified_classes: z.array(taskClass).min(1),
+            qualified_classes: z.array(taskClass),
           })
           .strict(),
       )
@@ -112,8 +124,8 @@ async function gitRoot(path: string): Promise<string | undefined> {
   try {
     const { stdout } = await execute(
       "git",
-      ["-C", path, "rev-parse", "--show-toplevel"],
-      { env: { PATH: process.env.PATH }, timeout: 5000 },
+      gitArgs(path, "--show-toplevel"),
+      { env: gitEnvironment(), timeout: 5000, maxBuffer: 65536 },
     );
     return await realpath(stdout.trim());
   } catch {
@@ -142,14 +154,29 @@ async function ensureOutsideRepositories(
     if (dirname(ancestor) === ancestor) break;
     ancestor = dirname(ancestor);
   }
-  if (await gitRoot(ancestor))
+  try {
+    await execute("git", gitArgs(ancestor, "--absolute-git-dir"), {
+      env: gitEnvironment(), timeout: 5000, maxBuffer: 65536,
+    });
+  } catch (cause) {
+    const failure = cause as { code?: unknown; killed?: unknown; stderr?: unknown };
+    if (
+      failure.code === 128 && !failure.killed &&
+      typeof failure.stderr === "string" &&
+      failure.stderr.startsWith("fatal: not a git repository")
+    ) return;
     throw new SpillwayError(
       "unsafe_data_path",
-      "Private config and data must be outside Git repositories",
+      "Could not establish that private config and data are outside Git repositories.",
     );
+  }
+  throw new SpillwayError(
+    "unsafe_data_path",
+    "Private config and data must be outside Git repositories",
+  );
 }
 
-export async function validateConfig(
+export async function planConfig(
   input: unknown,
   overrides: { dataDir?: string } = {},
 ): Promise<SpillwayConfig> {
@@ -268,14 +295,22 @@ export async function validateConfig(
     data_dir,
     repositories.map((repo) => repo.path),
   );
-  await mkdir(data_dir, { recursive: true, mode: 0o700 });
-  await chmod(data_dir, 0o700);
   return {
     ...config,
     policy: getPolicy(config.policy),
     repositories,
     data_dir,
   };
+}
+
+export async function validateConfig(
+  input: unknown,
+  overrides: { dataDir?: string } = {},
+): Promise<SpillwayConfig> {
+  const config = await planConfig(input, overrides);
+  await mkdir(config.data_dir, { recursive: true, mode: 0o700 });
+  await chmod(config.data_dir, 0o700);
+  return config;
 }
 
 export async function loadConfig(

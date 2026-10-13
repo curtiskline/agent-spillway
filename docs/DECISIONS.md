@@ -15,6 +15,7 @@ New runs use workload v3. V2 disclosed the existing discovery predicate; v3 corr
 | [0009](decisions/0009-read-pagination-evidence.md) | Version complete-page evidence correction | OpenCode marks normal pagination as truncated; prove complete explicit pages while preserving loss detection, full-context requirements and history. |
 | [0010](decisions/0010-onboarding-and-pilot.md) | Service diagnostics and versioned disposable pilot before wider automation | Finish Phase 3 onboarding/evaluation without inference, implicit acceptance or release claims. |
 | [0011](decisions/0011-saved-diagnostics-and-spec-measurements.md) | Saved-observation parity before checklists; declared-only task measurements | Explain failures without regrading; retain unknowns, public permissions and small-sample owner denominators. |
+| [0012](decisions/0012-private-configuration-bootstrap.md) | Empty grants and exclusive private setup | Qualification before task permission; bounded read-only planning and local-only starter creation. |
 
 ## Scope and owner decisions
 
@@ -54,3 +55,5 @@ New runs use workload v3. V2 disclosed the existing discovery predicate; v3 corr
 Complete reproducible real model/artifact/license/server/settings metadata and broader coding-class qualification; real accepted ordinary pilot work; reliable frontier limit signals; live Claude session/marketplace loading; clean-OS onboarding; npm name reservation/publication (lookup returned 404 on 2026-10-12, no reservation performed). Live service/model results and Linux fixture validation must be reported separately, without claiming coverage that was not run. No production infrastructure or meaningful financial cost is authorized. Branch protection is deferred until outside contributors; secret scanning is required before public push.
 
 ADR [0011](decisions/0011-saved-diagnostics-and-spec-measurements.md) records owner-authorized PR #4 continuation: saved transcript parity before explanations, declared-only task measurements, immutable historical grades and no additional inference.
+
+ADR [0012](decisions/0012-private-configuration-bootstrap.md) records empty class grants for qualification-only setup and exclusive private initialization after PR #5 merge.

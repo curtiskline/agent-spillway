@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "repo": "~/spillway-pilot/repo",
+  "endpoint": { "url": "http://127.0.0.1:8080/v1" },
+  "model": "your-exact-catalog-model-id",
+  "model_artifact": "your-exact-artifact-hash-or-revision",
+  "harness_version": "your-exact-opencode-version"
+}

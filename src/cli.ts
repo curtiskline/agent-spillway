@@ -14,6 +14,7 @@ import { parseStrictJson } from "./json.js";
 import { formatReport, type Scorecard } from "./report.js";
 import { formatDoctorReport, type DoctorReport } from "./doctor.js";
 import { createPilot } from "./pilot.js";
+import { initializeConfig } from "./init.js";
 import {
   qualificationDiagnosticsSchema,
   formatQualificationDiagnostics,
@@ -30,7 +31,7 @@ interface Output {
   err(text: string): void;
 }
 const usage =
-  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: doctor [--json], pilot create DIR, serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall\nreport [--json], audit list|show ID|submit ID --file PATH\nusage ID --file PATH, export --sanitized --repo URL [--profile-file PATH]\nqualify --profile ID [--metadata PATH], qualify list|show JOB-ID|reconcile JOB-ID --worker-stopped, qualify explain JOB-ID [--json]\naccept|reject ID [--owner-minutes N]";
+  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: init --from INPUT --directory NEW_ROOT, doctor [--json], pilot create DIR, serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall\nreport [--json], audit list|show ID|submit ID --file PATH\nusage ID --file PATH, export --sanitized --repo URL [--profile-file PATH]\nqualify --profile ID [--metadata PATH], qualify list|show JOB-ID|reconcile JOB-ID --worker-stopped, qualify explain JOB-ID [--json]\naccept|reject ID [--owner-minutes N]";
 function parseArgs(argv: string[]): CliOptions {
   const positional: string[] = [];
   const options: { config?: string; dataDir?: string } = {};
@@ -119,6 +120,29 @@ export async function runCli(
       output.out(
         `Task is ready for admission.${result.warnings.length ? `\n${result.warnings.join("\n")}` : ""}`,
       );
+      return 0;
+    }
+    if (command === "init") {
+      if (options.config || options.dataDir || args.length !== 4)
+        throw new SpillwayError(
+          "usage",
+          "Use init --from INPUT --directory NEW_ROOT without global config or data overrides.",
+        );
+      const paths = new Map<string, string>();
+      for (let index = 0; index < args.length; index += 2) {
+        const name = args[index]!, value = args[index + 1]!;
+        if (
+          !["--from", "--directory"].includes(name) ||
+          paths.has(name) || !value || value.startsWith("--")
+        )
+          throw new SpillwayError("usage", "Use init --from INPUT --directory NEW_ROOT.");
+        paths.set(name, resolve(value));
+      }
+      const receipt = await initializeConfig({
+        inputPath: paths.get("--from")!,
+        root: paths.get("--directory")!,
+      });
+      output.out(JSON.stringify(receipt, null, 2));
       return 0;
     }
     if (command === "qualify" && args[0] === "explain") {

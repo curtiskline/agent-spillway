@@ -17,7 +17,6 @@ export interface DoctorCheck {
     | "qualification";
   status: "pass" | "warning" | "fail";
   message: string;
-  profileId?: string;
 }
 export interface DoctorReport {
   version: 1;
@@ -154,7 +153,7 @@ export async function buildDoctorReport(input: DoctorInput): Promise<DoctorRepor
 
 export function formatDoctorReport(report: DoctorReport): string {
   // Use the closed message table rather than echoing arbitrary response text,
-  // returned service versions or optional profile IDs.
+  // returned service versions or configuration identifiers.
   const rows = report.checks.map((row) => {
     const message = messages[row.id]?.[row.status];
     return message

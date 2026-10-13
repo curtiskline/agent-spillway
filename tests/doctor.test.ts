@@ -79,7 +79,7 @@ describe("service-owned read-only diagnostics (fixture catalogs only)", () => {
     const output = JSON.stringify(report) + formatDoctorReport(report);
     for (const value of ["private-model", "second-model", "private-profile", "second-profile", config.data_dir, config.endpoints[0]!.url, "1.2.3"])
       expect(output).not.toContain(value);
-    expect(report.checks.every((row) => row.profileId === undefined)).toBe(true);
+    expect(report.checks.every((row) => !("profileId" in row))).toBe(true);
   });
   it("warns for active execution and pending evidence while failing unresolved execution and evidence errors", async () => {
     config.endpoints = [{ id: "fixture", kind: "local", url: await catalog() }];

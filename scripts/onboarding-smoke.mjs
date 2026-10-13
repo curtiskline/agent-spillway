@@ -66,7 +66,7 @@ try {
     ).stdout,
   );
   assert.equal(packed.length, 1);
-  for (const version of [1, 2]) {
+  for (const version of [1, 2, 3]) {
     assert.ok(
       packed[0].files.some(
         (file) => file.path === `eval/workload-v${version}/workload.json`,
@@ -99,28 +99,30 @@ try {
   );
   await access(join(packageDir, "dist", "qualification.js"));
   await access(join(packageDir, "scripts", "harness-wire-smoke.mjs"));
-  for (const version of [1, 2]) {
+  for (const version of [1, 2, 3]) {
     await access(join(packageDir, "eval", `workload-v${version}`, "acceptance.cjs"));
   }
   stage = "workload-versions";
   const { qualificationWorkloadHash } = await import(
     pathToFileURL(join(packageDir, "dist", "qualification.js")).href
   );
-  const workloadPath = join(packageDir, "eval", "workload-v2", "workload.json");
+  const workloadPath = join(packageDir, "eval", "workload-v3", "workload.json");
   const originalWorkload = await readFile(workloadPath, "utf8");
   const workloadManifest = JSON.parse(originalWorkload);
-  assert.equal(workloadManifest.version, 2);
-  assert.equal(
-    JSON.parse(await readFile(join(packageDir, "eval", "workload-v1", "workload.json"), "utf8")).version,
-    1,
-  );
+  assert.equal(workloadManifest.version, 3);
+  for (const version of [1, 2]) {
+    assert.equal(
+      JSON.parse(await readFile(join(packageDir, "eval", `workload-v${version}`, "workload.json"), "utf8")).version,
+      version,
+    );
+  }
   const workloadHash = await qualificationWorkloadHash();
   try {
-    for (const version of [1, 3]) {
+    for (const version of [1, 2, 4]) {
       await writeFile(workloadPath, JSON.stringify({ ...workloadManifest, version }), { mode: 0o600 });
       await assert.rejects(
         qualificationWorkloadHash,
-        (error) => error.issues?.some((issue) => issue.path[0] === "version" && issue.expected === 2),
+        (error) => error.issues?.some((issue) => issue.path[0] === "version" && issue.expected === 3),
       );
     }
   } finally {

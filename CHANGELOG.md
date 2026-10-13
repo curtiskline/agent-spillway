@@ -12,4 +12,6 @@ Phase 3 adds a transactional evidence outbox with acknowledged-prefix JSONL repl
 
 Qualification workload v2 states the exact discovery glob requirement that v1's grader already enforced. Historical v1 assets/results remain intact and inspectable; verification predicates and budgets are unchanged.
 
+Qualification workload v3 distinguishes complete explicit read pages from lost evidence using exact structured and rendered page boundaries. Byte caps, line truncation, ambiguous evidence and incomplete full-ledger context still fail. V1/v2 assets, observations and outcomes are preserved; no historical regrading or model qualification is inferred.
+
 Actual harness integration revealed concurrent automatic title generation and custom-model sampling settings being ignored. The adapter now disables auxiliary/subagent/automatic-compaction inference, selects primaries explicitly and enables temperature support with a zero default. Optional installed-binary wire smoke verifies actual request count, sampling and worker/reviewer permissions without provider inference. Qualification runs/results are also inspectable in the read-only dashboard.

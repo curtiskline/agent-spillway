@@ -14,11 +14,11 @@ import { fixture } from './helpers.js';
 const qualificationProgram = `
 const fs=require('node:fs'),cp=require('node:child_process'); const scenario=process.argv[2]; let n=0;
 const emit=event=>console.log(JSON.stringify(event)); const round=id=>emit({type:'step_start',part:{id}});
-const tool=(name,input,exit,output='')=>emit({type:'tool_use',part:{id:'part-'+(++n),callID:'call-'+n,tool:name,state:{status:'completed',input,output,metadata:exit===undefined?{}:{exit}}}});
+const tool=(name,input,exit,output='',metadata={})=>emit({type:'tool_use',part:{id:'part-'+(++n),callID:'call-'+n,tool:name,state:{status:'completed',input,output,metadata:{...metadata,...(exit===undefined?{}:{exit})}}}});
 const command=path=>{const result=cp.spawnSync(process.execPath,[path],{encoding:'utf8'});tool('bash',{command:'node '+path},result.status,result.stdout+result.stderr);};
 round('round-one');const inventory=fs.readFileSync('docs/inventory.json','utf8');tool('read',{filePath:'docs/inventory.json'},undefined,inventory);let ledger;
 if(scenario==='discovery'){fs.readdirSync('docs');tool('glob',{pattern:'docs/**'});}
-if(scenario==='read-search'||scenario==='multi-round'){if(scenario==='multi-round')round('round-two');ledger=fs.readFileSync('docs/ledger.jsonl','utf8');if(scenario==='multi-round')tool('read',{filePath:'docs/ledger.jsonl'},undefined,ledger);const matches=ledger.split('\\n').filter(line=>line.includes('target-seven')).join('\\n');tool('grep',{pattern:'target-seven',path:'docs/ledger.jsonl'},undefined,matches);}
+if(scenario==='read-search'||scenario==='multi-round'){if(scenario==='multi-round')round('round-two');ledger=fs.readFileSync('docs/ledger.jsonl','utf8');if(scenario==='multi-round'){const lines=ledger.split('\\n');if(lines.at(-1)==='')lines.pop();const text=lines.join('\\n');const output='<path>docs/ledger.jsonl</path>\\n<type>file</type>\\n<content>\\n'+lines.map((line,index)=>(index+1)+': '+line).join('\\n')+'\\n\\n(End of file - total '+lines.length+' lines)\\n</content>';tool('read',{filePath:'docs/ledger.jsonl'},undefined,output,{truncated:false,display:{type:'file',path:'docs/ledger.jsonl',text,lineStart:1,lineEnd:lines.length,totalLines:lines.length,truncated:false}});} const matches=ledger.split('\\n').filter(line=>line.includes('target-seven')).join('\\n');tool('grep',{pattern:'target-seven',path:'docs/ledger.jsonl'},undefined,matches);}
 if(scenario==='command')command('tools/echo.cjs');
 if(scenario==='tool-error-recovery'){command('tools/failure.cjs');command('tools/recover.cjs');}
 if(scenario==='test-driven-repair')command('checks/acceptance.cjs');
@@ -52,7 +52,7 @@ describe('Phase 3 integrated private service (fixture inference only)', () => {
           const result = await runProcess({ command: process.execPath,args: ['-e',program],cwd: input.worktree,timeoutMs: input.timeoutSec*1000,logPath: input.logPath,signal: input.signal });
           return { exit: result.exitCode === 0 ? 'completed' : 'failed',summary: result.stdout.trim(),usage: { inputTokens: 7,outputTokens: 2,costUsd: 0.002 } };
         }
-        const scenario = /fixed qualification workload v2, case ([a-z-]+)\./.exec(input.prompt)?.[1];
+        const scenario = /fixed qualification workload v3, case ([a-z-]+)\./.exec(input.prompt)?.[1];
         if (scenario) {
           qualificationCalls++;
           if (qualificationThrows) throw new Error('Fixture subprocess completion unknown');

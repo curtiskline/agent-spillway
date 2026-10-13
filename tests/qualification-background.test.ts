@@ -21,7 +21,7 @@ describe('durable background qualification admission (fixture inference only)', 
     const adapter: HarnessAdapter = {
       id: 'opencode',version: () => f.adapter.version(),
       async run(input) {
-        if (!input.prompt.includes('fixed qualification workload v2, case ')) return f.adapter.run(input);
+        if (!input.prompt.includes('fixed qualification workload v3, case ')) return f.adapter.run(input);
         qualificationCalls++;
         if (qualificationCalls === 1) { notifyStarted(); await gate; }
         const outcome = await runProcess({ command: process.execPath,args: ['-e',"console.log('Fixture-only known unsuccessful tool workload');process.exit(1);"],cwd: input.worktree,timeoutMs: input.timeoutSec*1000,logPath: input.logPath,signal: input.signal });

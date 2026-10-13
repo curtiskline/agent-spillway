@@ -150,12 +150,7 @@ export interface ToolEvidence {
 export interface QualificationCaseResult {
   capability: Capability;
   outcome:
-    | "passed"
-    | "failed"
-    | "timeout"
-    | "transport_error"
-    | "held"
-    | "uncertain";
+    "passed" | "failed" | "timeout" | "transport_error" | "held" | "uncertain";
   durationMs: number;
   reason: string | null;
   usage: Usage | null;
@@ -169,7 +164,7 @@ export interface QualificationCaseResult {
 }
 export interface QualificationResult {
   version: 1;
-  suiteVersion: 1 | 2;
+  suiteVersion: 1 | 2 | 3;
   scope: "tool-workload-only";
   provenance: "real" | "fixture";
   qualified: boolean;
@@ -363,15 +358,160 @@ function observedRequirements(
     new Set(tools.filter(ok).map((tool) => tool.round)).size >= 3
   );
 }
+function matchingReadPath(
+  input: Record<string, unknown>,
+  path: unknown,
+  worktree?: string,
+): boolean {
+  if (
+    typeof path !== "string" ||
+    path.length === 0 ||
+    typeof input.filePath !== "string" ||
+    input.path !== undefined ||
+    /[\r\n\0]/.test(path)
+  )
+    return false;
+  const relativePath = isAbsolute(path)
+    ? worktree
+      ? relative(worktree, path)
+      : undefined
+    : path;
+  if (relativePath === "" || relativePath === ".")
+    return (
+      input.filePath === "." ||
+      input.filePath === "./" ||
+      (worktree !== undefined &&
+        isAbsolute(input.filePath) &&
+        relative(worktree, input.filePath) === "")
+    );
+  return (
+    relativePath !== undefined &&
+    !isAbsolute(relativePath) &&
+    !relativePath.split("/").includes("..") &&
+    exactPath(input.filePath, relativePath, worktree)
+  );
+}
+function fullLedgerRead(
+  input: Record<string, unknown>,
+  metadata: Record<string, unknown> | undefined,
+  output: string,
+  worktree?: string,
+): boolean {
+  const display = object(metadata?.display) ? metadata.display : undefined;
+  if (
+    !display ||
+    metadata?.truncated !== false ||
+    display.type !== "file" ||
+    display.truncated !== false ||
+    !matchingReadPath(input, display.path, worktree) ||
+    display.lineStart !== 1 ||
+    display.lineEnd !== 256 ||
+    display.totalLines !== 256 ||
+    !(input.offset === undefined || input.offset === 0 || input.offset === 1) ||
+    (input.limit !== undefined &&
+      !(
+        typeof input.limit === "number" &&
+        Number.isSafeInteger(input.limit) &&
+        input.limit >= 256
+      )) ||
+    typeof display.text !== "string" ||
+    Buffer.byteLength(display.text) > 50 * 1024
+  )
+    return false;
+  const lines = display.text.split("\n");
+  if (lines.length !== 256 || lines.some((line) => line.length > 2000))
+    return false;
+  return (
+    output ===
+    `<path>${display.path}</path>\n<type>file</type>\n<content>\n` +
+      lines.map((line, index) => `${index + 1}: ${line}`).join("\n") +
+      "\n\n(End of file - total 256 lines)\n</content>"
+  );
+}
+function requestedReadPage(
+  input: Record<string, unknown>,
+  metadata: Record<string, unknown> | undefined,
+  output: unknown,
+  worktree?: string,
+): boolean {
+  const positive = (value: unknown): value is number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+  const offset =
+    input.offset === undefined || input.offset === 0 ? 1 : input.offset;
+  const display = object(metadata?.display) ? metadata.display : undefined;
+  if (
+    !positive(input.limit) ||
+    !positive(offset) ||
+    !display ||
+    display.truncated !== true ||
+    typeof output !== "string" ||
+    !matchingReadPath(input, display.path, worktree) ||
+    /Output capped at|line truncated to|output truncated/i.test(output)
+  )
+    return false;
+  if (display.type === "file") {
+    if (
+      display.lineStart !== offset ||
+      !positive(display.lineEnd) ||
+      !positive(display.totalLines) ||
+      display.lineEnd !== offset + input.limit - 1 ||
+      display.totalLines <= display.lineEnd ||
+      typeof display.text !== "string" ||
+      Buffer.byteLength(display.text) > 50 * 1024
+    )
+      return false;
+    const lines = display.text.split("\n");
+    if (
+      lines.length !== input.limit ||
+      lines.some((line) => line.length > 2000)
+    )
+      return false;
+    const expected =
+      `<path>${display.path}</path>\n<type>file</type>\n<content>\n` +
+      lines.map((line, index) => `${offset + index}: ${line}`).join("\n") +
+      `\n\n(Showing lines ${offset}-${display.lineEnd} of ${display.totalLines}. Use offset=${display.lineEnd + 1} to continue.)\n</content>`;
+    return output === expected;
+  }
+  if (display.type === "directory") {
+    if (
+      display.offset !== offset ||
+      !positive(display.totalEntries) ||
+      !Array.isArray(display.entries) ||
+      display.entries.length !== input.limit ||
+      display.totalEntries <= offset - 1 + input.limit ||
+      !display.entries.every(
+        (entry: unknown) =>
+          typeof entry === "string" && !/[\r\n\0]/.test(entry),
+      )
+    )
+      return false;
+    return (
+      output ===
+      [
+        `<path>${display.path}</path>`,
+        "<type>directory</type>",
+        "<entries>",
+        display.entries.join("\n"),
+        `\n(Showing ${input.limit} of ${display.totalEntries} entries. Use 'offset' parameter to read beyond entry ${offset + input.limit})`,
+        "</entries>",
+      ].join("\n")
+    );
+  }
+  return false;
+}
+
 export function observeToolEvidence(
   text: string,
   capability: Capability,
   worktree?: string,
+  suiteVersion: 1 | 2 | 3 = 3,
 ): ToolEvidence {
   const tools: PrivateObservation[] = [];
   let rounds = 0;
   let finalStop = false;
-  let valid = !text.includes(OUTPUT_TRUNCATED);
+  let valid =
+    [1, 2, 3].includes(suiteVersion) && !text.includes(OUTPUT_TRUNCATED);
+  const incompleteLedgerReads = new Set<number>();
   const seenTools = new Set<string>();
   const seenRounds = new Set<string>();
   const lines = text.split("\n").filter((line) => line.trim());
@@ -423,8 +563,35 @@ export function observeToolEvidence(
     const exit = metadata?.exit ?? structured?.exit;
     const exitCode =
       typeof exit === "number" && Number.isInteger(exit) ? exit : null;
+    const output =
+      typeof state.output === "string"
+        ? state.output
+        : typeof metadata?.output === "string"
+          ? metadata.output
+          : "";
+    const input = object(state.input) ? state.input : {};
+    const completePage =
+      suiteVersion === 3 &&
+      part.tool === "read" &&
+      state.status === "completed" &&
+      typeof state.output === "string" &&
+      metadata?.truncated === true &&
+      requestedReadPage(input, metadata, output, worktree);
+    if (suiteVersion === 3 && part.tool === "read") {
+      if (/Output capped at|line truncated to|output truncated/i.test(output))
+        valid = false;
+      const ledgerRead = [input.filePath, input.path].some((path) =>
+        exactPath(path, "docs/ledger.jsonl", worktree),
+      );
+      if (
+        ledgerRead &&
+        (typeof state.output !== "string" ||
+          !fullLedgerRead(input, metadata, output, worktree))
+      )
+        incompleteLedgerReads.add(index);
+    }
     if (
-      metadata?.truncated === true ||
+      (metadata?.truncated === true && !completePage) ||
       metadata?.timeout === true ||
       structured?.truncated === true ||
       structured?.timeout === true
@@ -436,13 +603,8 @@ export function observeToolEvidence(
       round: rounds,
       eventIndex: index,
       exitCode,
-      input: object(state.input) ? state.input : {},
-      output:
-        typeof state.output === "string"
-          ? state.output
-          : typeof metadata?.output === "string"
-            ? metadata.output
-            : "",
+      input,
+      output,
     });
   }
   return {
@@ -461,7 +623,14 @@ export function observeToolEvidence(
     requirementsMet:
       valid &&
       finalStop &&
-      observedRequirements(capability, tools, rounds, worktree),
+      observedRequirements(
+        capability,
+        capability === "multi-round"
+          ? tools.filter((tool) => !incompleteLedgerReads.has(tool.eventIndex))
+          : tools,
+        rounds,
+        worktree,
+      ),
   };
 }
 async function privateRead(path: string): Promise<string> {
@@ -486,7 +655,7 @@ async function privateRead(path: string): Promise<string> {
 }
 const workloadSchema = z
   .object({
-    version: z.literal(2),
+    version: z.literal(3),
     license: z.literal("Apache-2.0"),
     timeoutSeconds: z.literal(180),
     contextLines: z.literal(256),
@@ -516,7 +685,7 @@ const TOOL_FILES = {
 };
 async function workload() {
   const raw = await readFile(
-    new URL("../eval/workload-v2/workload.json", import.meta.url),
+    new URL("../eval/workload-v3/workload.json", import.meta.url),
     "utf8",
   );
   const manifest = workloadSchema.parse(parseStrictJson(raw));
@@ -525,11 +694,11 @@ async function workload() {
   )
     throw new Error("Workload capabilities are incomplete");
   const source = await readFile(
-    new URL("../eval/workload-v2/value.cjs", import.meta.url),
+    new URL("../eval/workload-v3/value.cjs", import.meta.url),
     "utf8",
   );
   const check = await readFile(
-    new URL("../eval/workload-v2/acceptance.cjs", import.meta.url),
+    new URL("../eval/workload-v3/acceptance.cjs", import.meta.url),
     "utf8",
   );
   const hash = createHash("sha256")
@@ -845,6 +1014,7 @@ export async function runQualification(
           await privateRead(logPath),
           scenario.id,
           worktree,
+          assets.manifest.version,
         );
       } catch {
         row.reason = "tool-evidence-unavailable";

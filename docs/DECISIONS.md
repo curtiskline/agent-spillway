@@ -1,6 +1,6 @@
 # Decisions and assumptions
 
-Workload v2 corrects an undisclosed discovery instruction requirement without weakening verification. Preserve v1 assets/outcomes; default new runs to v2 and accept historical v1 result documents. Result format version stays 1, suite version is 1 or 2, and content hashes distinguish evidence. Only the discovery prompt changes to state the exact required glob pattern; inference budgets, protected files, tool predicates and promotion/publication gates stay fixed.
+New runs use workload v3. V2 disclosed the existing discovery predicate; v3 corrects pagination being classified as lost transcript evidence. Result format version stays 1 and supported suite versions are 1, 2 and 3. Preserve v1/v2 assets, observers and outcomes without regrading. Explicit page delivery needs positive structured/rendered proof; full-ledger context, protected files, inference budgets and promotion/publication gates remain required.
 
 | ADR | Decision | Rationale / status |
 | --- | --- | --- |
@@ -12,6 +12,7 @@ Workload v2 corrects an undisclosed discovery instruction requirement without we
 | [0006](decisions/0006-phase2-review-and-sessions.md) | Local reviews, bounded repairs, owner-session frontier and per-user services | Explicit Phase 2 authorization after PR #1; no automatic paid calls. Strict pinned reviews, shared slot, immutable evidence, private service/credential references. |
 | [0007](decisions/0007-phase3-evidence-and-evaluation.md) | Transactional evidence, sampled owner-session audits and reproducible evaluation | Explicit Phase 3 authorization after PR #2; crash-safe private delivery, truthful small-sample reports, publication opt-in, pinned tool qualification and durable job fences. |
 | [0008](decisions/0008-versioned-workload-correction.md) | Version discovery instruction correction without regrading | Make the exact existing glob predicate explicit in v2, preserve v1 assets/results and strict historical parsing. |
+| [0009](decisions/0009-read-pagination-evidence.md) | Version complete-page evidence correction | OpenCode marks normal pagination as truncated; prove complete explicit pages while preserving loss detection, full-context requirements and history. |
 
 ## Scope and owner decisions
 

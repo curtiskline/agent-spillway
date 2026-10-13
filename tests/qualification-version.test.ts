@@ -24,7 +24,7 @@ it("rejects a mislabeled or unsupported default manifest in an isolated copy of 
   try {
     await chmod(root, 0o700);
     await mkdir(join(root, "src"));
-    await mkdir(join(root, "eval", "workload-v2"), { recursive: true });
+    await mkdir(join(root, "eval", "workload-v3"), { recursive: true });
     await writeFile(join(root, "package.json"), '{"type":"module"}');
     await symlink(join(checkout, "node_modules"), join(root, "node_modules"));
     // Copy the actual module/dependencies, rather than adding a public workload
@@ -53,18 +53,18 @@ it("rejects a mislabeled or unsupported default manifest in an isolated copy of 
     }
     for (const name of ["acceptance.cjs", "value.cjs"])
       await copyFile(
-        join(checkout, "eval", "workload-v2", name),
-        join(root, "eval", "workload-v2", name),
+        join(checkout, "eval", "workload-v3", name),
+        join(root, "eval", "workload-v3", name),
       );
     const original = JSON.parse(
       await readFile(
-        join(checkout, "eval", "workload-v2", "workload.json"),
+        join(checkout, "eval", "workload-v3", "workload.json"),
         "utf8",
       ),
     ) as Record<string, unknown>;
-    for (const version of [1, 2, 3]) {
+    for (const version of [1, 2, 3, 4]) {
       await writeFile(
-        join(root, "eval", "workload-v2", "workload.json"),
+        join(root, "eval", "workload-v3", "workload.json"),
         JSON.stringify({ ...original, version }),
       );
       const result = await runProcess({
@@ -79,7 +79,7 @@ it("rejects a mislabeled or unsupported default manifest in an isolated copy of 
       });
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim()).toBe(
-        version === 2 ? "accepted" : "rejected",
+        version === 3 ? "accepted" : "rejected",
       );
     }
   } finally {

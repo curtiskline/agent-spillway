@@ -211,3 +211,6 @@ Profile qualified_classes may be empty; no task grant is implied. planConfig(inp
 
 
 No application interfaces change for Linux lifecycle verification. The CI-only script takes an installed package path and requires explicit disposable-account opt-in. It invokes real CLI/manager/HTTP contracts; see [PHASE3_LINUX.md](PHASE3_LINUX.md).
+
+
+Administrative marketplace verification adds no application interface. Developer smoke invokes only bounded vendor plugin commands with isolated state and exact installed-asset checks; [PHASE3_MARKETPLACE.md](PHASE3_MARKETPLACE.md) freezes its command and identity contracts.

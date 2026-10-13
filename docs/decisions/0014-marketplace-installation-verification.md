@@ -1,0 +1,3 @@
+# ADR 0014: Verify administrative marketplace installation separately
+
+Accepted 2026-10-13 after PR #7 merge. Manifest validation cannot prove a real client registers and installs the plugin. Use pinned Claude Code administrative commands in exclusive temporary homes, with a current-source snapshot and separately identified anonymous public-source installation. Preserve installed asset identity and refuse unexpected executable hooks/service access. No sessions, paid calls, credential enrollment, policy changes or release claims follow. Live session evidence remains gated separately. See [frozen plan](../PHASE3_MARKETPLACE.md).

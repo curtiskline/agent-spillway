@@ -33,6 +33,7 @@
     "validate:community": "npm run build && node scripts/validate-community.mjs",
     "smoke:onboarding": "node scripts/onboarding-smoke.mjs",
     "smoke:harness": "node scripts/harness-wire-smoke.mjs",
+    "smoke:systemd": "node scripts/systemd-smoke.mjs",
     "measure:plugin": "node scripts/plugin-footprint.mjs"
   },
   "dependencies": {

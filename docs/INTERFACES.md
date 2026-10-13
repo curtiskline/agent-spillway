@@ -1,5 +1,7 @@
 # Shared interfaces (protocol v1)
 
+Qualification workload revision: result format `version: 1` remains unchanged; `suiteVersion: 1 | 2` distinguishes preserved historical v1 results from new default v2 runs. Strict runtime and JSON validators accept both supported versions and reject others. v2 states the existing discovery `docs/**` glob predicate explicitly; observed-tool/check/budget gates are unchanged. The workload hash binds the revision, and historical results are never regraded. See docs/PHASE3.md for ownership and integration requirements.
+
 `src/contracts.ts` is the authoritative typed contract. Phase 2 is explicitly owner-authorized after PR #1; [PHASE2.md](PHASE2.md) preserves the implementation handoff. Changes to shared contracts go through the orchestrator. This document consolidates the implemented Phase 1 and Phase 2 boundaries; Phase 3 was explicitly authorized after PR #2 (main `079478a`); release and Phase 4/5 remain gated.
 
 ## Task and configuration

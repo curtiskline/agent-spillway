@@ -169,7 +169,7 @@ export interface QualificationCaseResult {
 }
 export interface QualificationResult {
   version: 1;
-  suiteVersion: 1;
+  suiteVersion: 1 | 2;
   scope: "tool-workload-only";
   provenance: "real" | "fixture";
   qualified: boolean;
@@ -486,7 +486,7 @@ async function privateRead(path: string): Promise<string> {
 }
 const workloadSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     license: z.literal("Apache-2.0"),
     timeoutSeconds: z.literal(180),
     contextLines: z.literal(256),
@@ -516,7 +516,7 @@ const TOOL_FILES = {
 };
 async function workload() {
   const raw = await readFile(
-    new URL("../eval/workload-v1/workload.json", import.meta.url),
+    new URL("../eval/workload-v2/workload.json", import.meta.url),
     "utf8",
   );
   const manifest = workloadSchema.parse(parseStrictJson(raw));
@@ -525,11 +525,11 @@ async function workload() {
   )
     throw new Error("Workload capabilities are incomplete");
   const source = await readFile(
-    new URL("../eval/workload-v1/value.cjs", import.meta.url),
+    new URL("../eval/workload-v2/value.cjs", import.meta.url),
     "utf8",
   );
   const check = await readFile(
-    new URL("../eval/workload-v1/acceptance.cjs", import.meta.url),
+    new URL("../eval/workload-v2/acceptance.cjs", import.meta.url),
     "utf8",
   );
   const hash = createHash("sha256")
@@ -644,7 +644,7 @@ export async function runQualification(
   const root = await emptyPrivateRoot(input.root);
   const result: QualificationResult = {
     version: 1,
-    suiteVersion: 1,
+    suiteVersion: assets.manifest.version,
     scope: "tool-workload-only",
     provenance: input.provenance ?? "real",
     qualified: false,
@@ -803,7 +803,7 @@ export async function runQualification(
         limits: { max_minutes: 3, max_attempts: 1 },
         body: scenario.instruction,
       };
-      const prompt = `Apache-2.0 fixed qualification workload v1, case ${scenario.id}. ${scenario.instruction}\nReturn the expected value from the exported function in src/value.cjs. Only src/value.cjs may change. Checks/docs/fixtures/tools are protected. Use exact direct commands: node tools/echo.cjs, node tools/failure.cjs, node tools/recover.cjs, node checks/acceptance.cjs as requested; no compound wrappers, aliases or echo substitutes. Use the read tool with docs/inventory.json and (for multi-round) the full docs/ledger.jsonl; grep target-seven in docs/ledger.jsonl. The multi-round value is only in the ledger. Use the edit/write filePath for src/value.cjs. Run node checks/acceptance.cjs, commit your change on spillway/${id}, and leave the worktree clean. Do not push, merge, deploy, install dependencies or contact any other provider. Use existing harness tools; final claims do not substitute for observed tool evidence.\n`;
+      const prompt = `Apache-2.0 fixed qualification workload v${assets.manifest.version}, case ${scenario.id}. ${scenario.instruction}\nReturn the expected value from the exported function in src/value.cjs. Only src/value.cjs may change. Checks/docs/fixtures/tools are protected. Use exact direct commands: node tools/echo.cjs, node tools/failure.cjs, node tools/recover.cjs, node checks/acceptance.cjs as requested; no compound wrappers, aliases or echo substitutes. Use the read tool with docs/inventory.json and (for multi-round) the full docs/ledger.jsonl; grep target-seven in docs/ledger.jsonl. The multi-round value is only in the ledger. Use the edit/write filePath for src/value.cjs. Run node checks/acceptance.cjs, commit your change on spillway/${id}, and leave the worktree clean. Do not push, merge, deploy, install dependencies or contact any other provider. Use existing harness tools; final claims do not substitute for observed tool evidence.\n`;
       const attempt: AttemptRecord = {
         id: index + 1,
         taskId: id,

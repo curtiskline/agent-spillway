@@ -72,3 +72,9 @@ Long-running qualification addendum: optional POST /api/v1/qualify background:tr
 
 
 Actual-harness budget addendum: OpenCode v1.19.0 automatically forks title inference and custom provider model temperature capability defaults false. The adapter disables title/summary/compaction/subagents, automatic compaction/pruning and batch delegation; selects explicit worker/reviewer primaries; declares model temperature support; defaults sampling to zero and records primary/temperature privately. Worker task/skill tools are denied. The output-token limit is preserved; context overflow fails rather than creating hidden inference. Actual installed-binary loopback wire smoke must establish one primary completion, transmitted temperature and tool permissions; serialized fixture assertions alone do not establish this. Interrupted exploratory runs retain private evidence/uncertainty and cannot qualify profiles.
+
+### Workload revision contract
+
+The first full-GPU run exposed a hidden discovery predicate: v1 asks for glob discovery but its observer requires the exact `docs/**` pattern. Preserve v1 assets and results unchanged. The default bundled workload becomes v2 with that exact pattern stated in the discovery instruction; all seven capabilities, protected assets, observed-tool predicates, budgets and qualification gates remain unchanged. No old result is regraded or relabeled.
+
+Result format `version` stays 1; `QualificationResult.suiteVersion` and its strict runtime/JSON validators accept only 1 or 2. New runs report the loaded v2 manifest version and a different workload hash. Historical v1 result inspection remains supported. No database migration, HTTP shape, MCP tool or automatic profile/class/publication change is required. Root owns docs, integration, package smoke and deployment; execution agent owns qualification module/result schema, new eval/workload-v2 assets and focused tests, with v1 assets read-only.

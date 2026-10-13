@@ -52,7 +52,7 @@ describe('Phase 3 integrated private service (fixture inference only)', () => {
           const result = await runProcess({ command: process.execPath,args: ['-e',program],cwd: input.worktree,timeoutMs: input.timeoutSec*1000,logPath: input.logPath,signal: input.signal });
           return { exit: result.exitCode === 0 ? 'completed' : 'failed',summary: result.stdout.trim(),usage: { inputTokens: 7,outputTokens: 2,costUsd: 0.002 } };
         }
-        const scenario = /fixed qualification workload v1, case ([a-z-]+)\./.exec(input.prompt)?.[1];
+        const scenario = /fixed qualification workload v2, case ([a-z-]+)\./.exec(input.prompt)?.[1];
         if (scenario) {
           qualificationCalls++;
           if (qualificationThrows) throw new Error('Fixture subprocess completion unknown');

@@ -38,6 +38,22 @@ The corrected single-inference run completed with stable 32,768-token metadata. 
 | Test-driven repair | Timeout | 3 | 9 |
 | Multi-round/context | Timeout | 3 | 4 |
 
-The job completed without uncertainty and did not qualify the model. GPU weight placement is not exposed by the model catalog; decoding timings and GPU utilization alone cannot establish full offload. The owner offered Windows diagnostics, so a separate diagnostic repeat was admitted after upgrading the idle service to the final tested build. Loading settings and acceptance criteria were preserved. Its receipt and operator telemetry remain outside runner-owned directories and Git; outcomes are pending. No further automatic retries or profile promotion are implied.
+The job completed without uncertainty and did not qualify the model. GPU weight placement is not exposed by the model catalog; decoding timings and GPU utilization alone cannot establish full offload. The owner offered Windows diagnostics, so a separate diagnostic repeat was admitted after upgrading the idle service to the final tested build. Loading settings and acceptance criteria were preserved. That repeat also completed with all seven cases timing out. Its receipt and operator telemetry remain outside runner-owned directories and Git. No profile promotion resulted.
 
 Subsequent read-only inspection through the official LM Studio SDK retrieved the loaded instance's configuration without loading a model or starting inference. GPU offload was configured as a small fraction of the model rather than full offload; this is configuration evidence, not an observed layer-allocation count. The loaded prompt template also defaults omitted reasoning effort to `xhigh`. An independent actual OpenCode wire capture with the exact model identifier confirmed that the adapter sends neither a reasoning override nor that instruction. Hardware placement should be corrected before drawing capability conclusions; reasoning, workload and timeout settings should remain unchanged for the next comparison. Private configuration/template snapshots and resource estimates remain outside Git. No application changes or qualification claims follow from this diagnosis.
+
+The owner then selectively unloaded and reloaded the same model with explicit full GPU offload and 32,768 context. Read-only SDK comparison found only the GPU setting changed; prediction settings were identical. Owner GPU readings corroborated substantially higher device-memory use and utilization. The separate v1 comparison finished without uncertainty in about six minutes; every case completed within its unchanged three-minute limit and passed independent protected code checks.
+
+| Capability | Qualification outcome | Duration (seconds) |
+| --- | --- | --- |
+| Discovery | Failed tool evidence | 51.7 |
+| Read/search | Passed | 63.8 |
+| Structured edit | Passed | 26.5 |
+| Command | Passed | 66.4 |
+| Tool error recovery | Failed tool evidence | 50.4 |
+| Test-driven repair | Passed | 55.4 |
+| Multi-round/context | Failed tool evidence | 49.4 |
+
+Independent review verified all seven result SHA pins, ancestry, clean worktrees, source-only changes, protected fixture integrity and code checks, and reparsed the recorded tool evidence. Recovery used command wrappers masking the deliberate exit 17; multi-round read the full context across eleven rounds but omitted required grep. Discovery used glob `**/*`, while the observer required `docs/**` without disclosing that pattern in the instruction. Report this narrow instruction/grader mismatch accurately, not as general inability to discover files.
+
+The run remains unqualified and unchanged. ADR 0008 introduces a separate v2 workload that states the existing exact discovery predicate, retaining v1 assets/results and all verification requirements. A later v2 run will have its own suite version and hash. No community profile, coding-class promotion or release follows from the v1 comparison.

@@ -1,5 +1,7 @@
 # Decisions and assumptions
 
+Workload v2 corrects an undisclosed discovery instruction requirement without weakening verification. Preserve v1 assets/outcomes; default new runs to v2 and accept historical v1 result documents. Result format version stays 1, suite version is 1 or 2, and content hashes distinguish evidence. Only the discovery prompt changes to state the exact required glob pattern; inference budgets, protected files, tool predicates and promotion/publication gates stay fixed.
+
 | ADR | Decision | Rationale / status |
 | --- | --- | --- |
 | [0001](decisions/0001-runtime.md) | TypeScript ESM, Node >=22.13 and built-in SQLite | Small dependency surface, npm/MCP integration and one local queue; CI verifies supported runtimes. |
@@ -9,6 +11,7 @@
 | [0005](decisions/0005-dashboard-and-scope.md) | Private dashboard prefix and positive scope globs | Prevent loopback cross-port cookie confusion, artifact substitution and unintentionally permissive negation patterns. |
 | [0006](decisions/0006-phase2-review-and-sessions.md) | Local reviews, bounded repairs, owner-session frontier and per-user services | Explicit Phase 2 authorization after PR #1; no automatic paid calls. Strict pinned reviews, shared slot, immutable evidence, private service/credential references. |
 | [0007](decisions/0007-phase3-evidence-and-evaluation.md) | Transactional evidence, sampled owner-session audits and reproducible evaluation | Explicit Phase 3 authorization after PR #2; crash-safe private delivery, truthful small-sample reports, publication opt-in, pinned tool qualification and durable job fences. |
+| [0008](decisions/0008-versioned-workload-correction.md) | Version discovery instruction correction without regrading | Make the exact existing glob predicate explicit in v2, preserve v1 assets/results and strict historical parsing. |
 
 ## Scope and owner decisions
 

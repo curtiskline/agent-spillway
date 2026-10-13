@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import {
   chmod,
+  mkdir,
   mkdtemp,
   readFile,
   realpath,
@@ -15,16 +17,94 @@ import {
   communityProjection,
   observeToolEvidence,
   qualificationMetadataSchema,
+  qualificationWorkloadHash,
   runQualification,
   validateCommunityProfile,
   type QualificationMetadata,
 } from "../src/qualification.js";
 import { runProcess } from "../src/process.js";
+import { Controller } from "../src/controller.js";
+import { Store } from "../src/store.js";
 import type {
   EndpointProfile,
   HarnessAdapter,
   ModelProfile,
 } from "../src/contracts.js";
+
+const LEGACY_WORKLOAD_HASH =
+  "782895eff32247f36c8c50782186582f2ebf075854879d1c1687ba476869b9f8";
+
+describe("immutable qualification workload revisions", () => {
+  it("preserves every v1 byte and changes only the v2 manifest revision and discovery instruction", async () => {
+    const digests = {
+      "README.md":
+        "0ec630b14c6900660c0ffd718cf659b3347db5af3559fac04e8e6d8c87867beb",
+      "acceptance.cjs":
+        "b8306d5b7c31b55fcd5c7567a60de455e2fcafa8d7b3784a19171571a77991ab",
+      "value.cjs":
+        "688506beebc9c05e799857154be43808c81907ff34f05627d8f608d9ab77c4a5",
+      "workload.json":
+        "2d1ebac27fdf5fb6cf5ee21f378960f54cb705886698bd3c6f42e65515d69114",
+    };
+    for (const [name, expected] of Object.entries(digests)) {
+      const original = await readFile(
+        new URL(`../eval/workload-v1/${name}`, import.meta.url),
+      );
+      expect(createHash("sha256").update(original).digest("hex")).toBe(
+        expected,
+      );
+      if (name === "acceptance.cjs" || name === "value.cjs")
+        expect(
+          await readFile(
+            new URL(`../eval/workload-v2/${name}`, import.meta.url),
+          ),
+        ).toEqual(original);
+    }
+    interface Manifest {
+      version: number;
+      cases: Array<{ id: string; instruction: string; expected: unknown }>;
+    }
+    const manifest = async (version: number) =>
+      JSON.parse(
+        await readFile(
+          new URL(
+            `../eval/workload-v${version}/workload.json`,
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      ) as Manifest;
+    const original = await manifest(1);
+    const current = await manifest(2);
+    expect(current).toEqual({
+      ...original,
+      version: 2,
+      cases: original.cases.map((row) =>
+        row.id === "discovery"
+          ? {
+              ...row,
+              instruction:
+                "Discover the repository using the glob tool with the exact pattern docs/**, then read docs/inventory.json. Implement its discovery value in src/value.cjs.",
+            }
+          : row,
+      ),
+    });
+    expect(await qualificationWorkloadHash()).not.toBe(LEGACY_WORKLOAD_HASH);
+    const schema = JSON.parse(
+      await readFile(
+        new URL("../schemas/qualification.schema.json", import.meta.url),
+        "utf8",
+      ),
+    ) as {
+      properties: {
+        version: { const: number };
+        suiteVersion: { enum: number[]; const?: number };
+      };
+    };
+    expect(schema.properties.version.const).toBe(1);
+    expect(schema.properties.suiteVersion).toEqual({ enum: [1, 2] });
+  });
+});
 
 const complete: QualificationMetadata = {
   model: "fixture-model",
@@ -104,9 +184,15 @@ describe("fixed qualification workload through real Git and a fixture subprocess
       },
       async run(input) {
         expect(input.temperature).toBe(0);
+        expect(input.timeoutSec).toBe(180);
+        expect(input.prompt).toContain("qualification workload v2, case ");
         calls++;
         const scenario = /case ([a-z-]+)\./.exec(input.prompt)?.[1];
         if (!scenario) throw new Error("Unexpected arbitrary prompt");
+        if (scenario === "discovery")
+          expect(input.prompt).toContain(
+            "using the glob tool with the exact pattern docs/**",
+          );
         const run = await runProcess({
           command: process.execPath,
           args: [executable, scenario],
@@ -141,6 +227,9 @@ describe("fixed qualification workload through real Git and a fixture subprocess
       provenance: "fixture",
     });
     expect(calls).toBe(7);
+    expect(result.version).toBe(1);
+    expect(result.suiteVersion).toBe(2);
+    expect(result.workloadHash).toBe(await qualificationWorkloadHash());
     expect(result.cases.map((row) => row.capability)).toEqual(CAPABILITIES);
     expect(
       result.cases.every(
@@ -204,6 +293,62 @@ describe("fixed qualification workload through real Git and a fixture subprocess
       expect(
         await readFile(join(row.worktree!, "checks/acceptance.cjs"), "utf8"),
       ).toContain("assert.deepEqual");
+
+    // The strict service parser must preserve fixture-only historical envelopes
+    // without regrading them or rewriting their version/hash/evidence fields.
+    const data = join(root, "data");
+    const store = new Store(data);
+    const controller = new Controller(
+      {
+        version: 1,
+        data_dir: data,
+        port: 0,
+        poll_interval_ms: 1000,
+        repositories: [
+          { path: result.cases[0]!.worktree!, data_policy: "local-only" },
+        ],
+        endpoints: [endpoint],
+        profiles: [profile],
+        default_profile: profile.id,
+        allow_checks_only: true,
+      },
+      store,
+      adapter,
+    );
+    try {
+      for (const suiteVersion of [1, 2, 3] as const) {
+        const id = `inspection-v${suiteVersion}`;
+        const jobRoot = join(data, "qualifications", id);
+        await mkdir(jobRoot, { recursive: true, mode: 0o700 });
+        store.createQualificationJob({
+          id,
+          root: jobRoot,
+          profileId: profile.id,
+        });
+        const resultPath = join(jobRoot, "result.json");
+        const envelope = {
+          ...result,
+          suiteVersion,
+          ...(suiteVersion === 1 ? { workloadHash: LEGACY_WORKLOAD_HASH } : {}),
+        };
+        const serialized = JSON.stringify(envelope);
+        await writeFile(resultPath, serialized, { mode: 0o600 });
+        store.finishQualificationJob(id, "completed", resultPath);
+        if (suiteVersion === 3)
+          await expect(
+            controller.qualificationDetail(id),
+          ).rejects.toMatchObject({
+            code: "QUALIFICATION_RESULT",
+          });
+        else
+          expect((await controller.qualificationDetail(id)).result).toEqual(
+            envelope,
+          );
+        expect(await readFile(resultPath, "utf8")).toBe(serialized);
+      }
+    } finally {
+      store.close();
+    }
   }, 30000);
   it("holds all cases on catalog/version mismatch without running a worker", async () => {
     const missing = await runQualification({
@@ -268,6 +413,36 @@ describe("fixed qualification workload through real Git and a fixture subprocess
 
 const event = (type: string, part: unknown) => JSON.stringify({ type, part });
 describe("tool evidence and metadata qualification boundaries", () => {
+  it.each(["docs/**", "**/*"])(
+    "keeps discovery's exact glob predicate for %s",
+    (pattern) => {
+      const trace = [
+        event("step_start", { id: "round" }),
+        event("tool_use", {
+          id: "glob",
+          tool: "glob",
+          state: {
+            status: "completed",
+            input: { pattern },
+            output: "docs/inventory.json",
+          },
+        }),
+        event("tool_use", {
+          id: "read",
+          tool: "read",
+          state: {
+            status: "completed",
+            input: { filePath: "docs/inventory.json" },
+            output: "inventory",
+          },
+        }),
+        event("step_finish", { reason: "stop" }),
+      ].join("\n");
+      expect(observeToolEvidence(trace, "discovery").requirementsMet).toBe(
+        pattern === "docs/**",
+      );
+    },
+  );
   it("rejects echo, compound wrappers and marker text in unused path fields", () => {
     const trace = (
       name: string,

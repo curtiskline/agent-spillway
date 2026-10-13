@@ -1570,7 +1570,7 @@ export class Controller {
       const schema: z.ZodType<QualificationResult> = z
         .object({
           version: z.literal(1),
-          suiteVersion: z.literal(1),
+          suiteVersion: z.union([z.literal(1), z.literal(2)]),
           scope: z.literal("tool-workload-only"),
           provenance: z.enum(["real", "fixture"]),
           qualified: z.boolean(),

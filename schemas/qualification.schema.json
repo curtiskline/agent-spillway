@@ -6,7 +6,10 @@
       "const": 1
     },
     "suiteVersion": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "scope": {
       "const": "tool-workload-only"

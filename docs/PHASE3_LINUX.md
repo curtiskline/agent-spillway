@@ -1,6 +1,6 @@
 # Phase 3 Linux service verification
 
-Authorized 2026-10-13 after PR #6 merged at `8716481`. The Linux lifecycle gate currently has renderer/executor fixtures only. Exercise the installed package with the real systemd user manager on an ephemeral Ubuntu CI host. This is operational service evidence with synthetic model responses, not real qualification, desktop onboarding, owner acceptance or release.
+Authorized 2026-10-13 after PR #6 merged at `8716481`. At the start of this wave the Linux lifecycle gate had renderer/executor fixtures only. Exercise the installed package with the real systemd user manager on an ephemeral Ubuntu CI host. This is operational service evidence with synthetic model responses, not real qualification, desktop onboarding, owner acceptance or release.
 
 ## Frozen boundaries
 
@@ -25,6 +25,8 @@ Sources: systemd's [loginctl documentation](https://github.com/systemd/systemd/b
 
 ## Verification checkpoint
 
-Local full suite: 610 tests/45 files, typecheck/lint/build pass. The 45 new checks cover argument/account/opt-in refusals, preexisting/dangling definitions and enable links, no-write ordinary-host refusal, and the actual fixture subprocess's baseline failure/source-only commit/protected check/read-only review. Source/package onboarding and installed OpenCode wire checks pass. Independent operational review has verified the corrected enable-link guard. Actual systemd manager operations cannot run on the Mac host and remain required CI evidence.
+Local full suite: 610 tests/45 files, typecheck/lint/build pass. The 45 new checks cover argument/account/opt-in refusals, preexisting/dangling definitions and enable links, no-write ordinary-host refusal, and the actual fixture subprocess's baseline failure/source-only commit/protected check/read-only review. Source/package onboarding and installed OpenCode wire checks pass. Independent operational review has verified the corrected enable-link guard. Actual systemd manager operations cannot run on the Mac host; they were subsequently verified in dedicated Ubuntu CI.
 
 Final independent security review passed 45 checks after adding refusal for orphan systemd overrides across the actual manager UnitPath roots (specific, dash-prefix and type-wide). Installation without start also checks effective DropInPaths before first execution. No application implementation changes were needed.
+
+L30–L33 complete: code head `ba8dee2` passed the [actual Ubuntu24.04/Node24 systemd lifecycle job](https://github.com/curtiskline/agent-spillway/actions/runs/38409471100/job/115337675500), including provisioning, packaged CLI operations and dedicated-account cleanup. Linux Node22/24 and macOS Node24 full checks/package onboarding, installed-harness wire checks on Linux Node24 and secret scanning also pass. [PR #7](https://github.com/curtiskline/agent-spillway/pull/7) records this wave. This verifies operations on the tested ephemeral Linux host; real model qualification, owner decisions, live desktop/Claude sessions and release remain separate evidence gates.

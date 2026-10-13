@@ -95,6 +95,7 @@ const publicErrorCodes = new Set([
   "INVALID_EXPORT_SOURCE",
   "invalid_export",
   "QUALIFICATION_RESULT",
+  "QUALIFICATION_DIAGNOSTICS",
   "unsafe_export",
   "VERIFICATION_FAILED",
   "database_state",
@@ -227,7 +228,8 @@ export class ServiceClient {
                   "/api/v1/export",
                   "/api/v1/endpoints",
                   "/api/v1/evidence/sync",
-                ].includes(path)
+                ].includes(path) ||
+                /^\/api\/v1\/qualifications\/[a-z0-9-]+\/diagnostics$/.test(path)
               ? 30000
               : 5000,
         ),

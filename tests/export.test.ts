@@ -210,6 +210,35 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("closed anonymous sanitized export", () => {
+  it("adds only closed numeric/boolean declared features after publication permission", async () => {
+    const input = setup();
+    const spec = input.snapshot.tasks[0]!.task.spec;
+    spec.body = "é🙂";
+    spec.scope = [secret, secret];
+    spec.context = [secret, secret, secret];
+    spec.checks = [secret, secret, secret, secret];
+    spec.no_checks_justification = secret;
+    (spec as unknown as Record<string, unknown>).taskSpec = { raw: secret };
+    const before = JSON.stringify(input.snapshot);
+    const result = await exportSanitized(input);
+    expect(result.tasks[0]?.taskSpec).toEqual({ bodyBytes: 6, scopePatterns: 2,
+      contextFiles: 3, checkCommands: 4, hasNoChecksJustification: true });
+    expect(JSON.stringify(result)).not.toContain(secret);
+    expect(JSON.stringify(input.snapshot)).toBe(before);
+    delete input.config.repositories[0]!.publication;
+    const verifyPublic = vi.fn(async () => true);
+    await expect(exportSanitized({ ...input, verifyPublic })).rejects.toThrow("publication permission");
+    expect(verifyPublic).not.toHaveBeenCalled();
+  });
+  it("projects malformed measured legacy fields as null without losing ordinary outcomes or weakening publication verification", async () => {
+    const input = setup();
+    (input.snapshot.tasks[0]!.task.spec as unknown as Record<string, unknown>).checks = { private: secret };
+    const exported = await exportSanitized(input);
+    expect(exported.tasks[0]?.taskSpec).toBeNull();
+    expect(exported.tasks[0]?.state).toBe("accepted");
+    expect(JSON.stringify(exported)).not.toContain(secret);
+    await expect(exportSanitized({ ...input, verifyPublic: async () => false })).rejects.toThrow("verification failed");
+  });
   it("projects only public outcomes and reviewed metadata without sensitive payloads or original IDs", async () => {
     const result = await exportSanitized(setup());
     const json = JSON.stringify(result);
@@ -269,6 +298,7 @@ describe("closed anonymous sanitized export", () => {
       "abandoned",
     ]);
     expect(result.qualificationExcluded).toBe(1);
+    expect(result.tasks.every((task) => task.taskSpec?.scopePatterns === 1)).toBe(true);
   });
   it("leaves absent or historically unpinned metadata unknown and nonreproducible", async () => {
     const input = setup();

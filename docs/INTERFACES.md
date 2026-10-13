@@ -200,3 +200,7 @@ CLI adds `report [--json]`, `audit list`, `audit show ID`, `audit submit ID --fi
 ## Onboarding diagnostics and pilot creation
 
 The frozen additive contracts are in [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md). GET `/api/v1/doctor` returns DoctorReport with closed pass/warning/fail checks and safe fixed messages; bearer authentication required. CLI `doctor [--json]` maps fail to exit1, and no-service failure remains actionable without raw exceptions. `pilot create DIR` calls the standalone new-repository creator, prints a private PilotManifest and does not contact or bank into the service. No MCP, database migration, policy, class permission or qualification-result shape changes.
+
+## Phase 3 evaluation follow-up
+
+[PHASE3_EVALUATION.md](PHASE3_EVALUATION.md) defines additive taskSpecs scorecard buckets, closed nullable taskSpec export measurements, shared qualification requirement checklists and the strict diagnostics response. GET `/api/v1/qualifications/:id/diagnostics` requires bearer authentication even via dashboard aliases. `qualify explain JOB-ID [--json]` inspects saved evidence with no mutations/inference. Existing result version/suite semantics, public permission gates and five MCP tools remain unchanged.

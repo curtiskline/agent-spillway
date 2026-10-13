@@ -147,6 +147,62 @@ export interface ToolEvidence {
   requirementsMet: boolean;
   contextBytesObserved: number;
 }
+export const QUALIFICATION_REQUIREMENT_IDS = [
+  "complete-transcript",
+  "final-stop",
+  "inventory-read",
+  "discovery-glob",
+  "ledger-search",
+  "scoped-edit",
+  "command-success",
+  "tool-failure",
+  "tool-recovery",
+  "repair-sequence",
+  "full-context",
+  "acceptance-check",
+  "assistant-rounds",
+  "successful-tool-rounds",
+] as const;
+export type QualificationRequirementId =
+  (typeof QUALIFICATION_REQUIREMENT_IDS)[number];
+export const QUALIFICATION_REQUIREMENT_MESSAGES: Record<
+  QualificationRequirementId,
+  string
+> = {
+  "complete-transcript":
+    "The saved tool transcript is complete and unambiguous.",
+  "final-stop": "The last assistant round ends with a final stop.",
+  "inventory-read": "A completed read inspected the required inventory.",
+  "discovery-glob": "The required discovery glob pattern was used.",
+  "ledger-search": "The required ledger target was searched with grep.",
+  "scoped-edit": "A recognized structured edit changed the scoped source.",
+  "command-success":
+    "The required direct command succeeded with its expected output.",
+  "tool-failure":
+    "The required direct failure command produced its expected output and exit 17.",
+  "tool-recovery":
+    "The required direct recovery command succeeded after that failure.",
+  "repair-sequence":
+    "A failing assertion preceded a scoped edit and a successful protected check.",
+  "full-context":
+    "A complete eligible ledger read exposed the target and at least 32,000 bytes.",
+  "acceptance-check":
+    "The required direct protected check completed successfully.",
+  "assistant-rounds": "At least three distinct assistant rounds were observed.",
+  "successful-tool-rounds":
+    "Successful tools occurred in at least three rounds.",
+};
+export interface QualificationRequirementCheck {
+  id: QualificationRequirementId;
+  met: boolean;
+  message: string;
+}
+function requirement(
+  id: QualificationRequirementId,
+  met: boolean,
+): QualificationRequirementCheck {
+  return { id, met, message: QUALIFICATION_REQUIREMENT_MESSAGES[id] };
+}
 export interface QualificationCaseResult {
   capability: Capability;
   outcome:
@@ -244,12 +300,12 @@ function scriptCommand(
     (worktree !== undefined && tool.input.workdir === worktree)
   );
 }
-function observedRequirements(
+function requirementChecks(
   capability: Capability,
   tools: PrivateObservation[],
   rounds: number,
   worktree?: string,
-): boolean {
+): QualificationRequirementCheck[] {
   const ok = (tool: PrivateObservation) =>
     tool.status === "completed" &&
     (tool.tool !== "bash" || tool.exitCode === 0);
@@ -284,26 +340,39 @@ function observedRequirements(
     scriptCommand(tool, "checks/acceptance.cjs", worktree),
   );
   if (capability === "discovery")
-    return (
-      read &&
-      tools.some(
-        (tool) =>
-          ok(tool) &&
-          tool.tool === "glob" &&
-          tool.input.pattern === "docs/**" &&
-          (tool.input.path === undefined ||
-            exactPath(tool.input.path, ".", worktree)),
-      )
-    );
-  if (capability === "read-search") return read && search;
-  if (capability === "structured-edit") return edits.length > 0;
+    return [
+      requirement("inventory-read", read),
+      requirement(
+        "discovery-glob",
+        tools.some(
+          (tool) =>
+            ok(tool) &&
+            tool.tool === "glob" &&
+            tool.input.pattern === "docs/**" &&
+            (tool.input.path === undefined ||
+              exactPath(tool.input.path, ".", worktree)),
+        ),
+      ),
+    ];
+  if (capability === "read-search")
+    return [
+      requirement("inventory-read", read),
+      requirement("ledger-search", search),
+    ];
+  if (capability === "structured-edit")
+    return [requirement("scoped-edit", edits.length > 0)];
   if (capability === "command")
-    return tools.some(
-      (tool) =>
-        ok(tool) &&
-        scriptCommand(tool, "tools/echo.cjs", worktree) &&
-        tool.output.includes("spillway-command-ok"),
-    );
+    return [
+      requirement(
+        "command-success",
+        tools.some(
+          (tool) =>
+            ok(tool) &&
+            scriptCommand(tool, "tools/echo.cjs", worktree) &&
+            tool.output.includes("spillway-command-ok"),
+        ),
+      ),
+    ];
   if (capability === "tool-error-recovery") {
     const failure = tools.find(
       (tool) =>
@@ -311,52 +380,70 @@ function observedRequirements(
         tool.output.includes("Intentional qualification tool error") &&
         tool.exitCode === 17,
     );
-    return (
-      !!failure &&
-      tools.some(
-        (tool) =>
-          tool.eventIndex > failure.eventIndex &&
-          ok(tool) &&
-          scriptCommand(tool, "tools/recover.cjs", worktree) &&
-          tool.output.includes("spillway-recovery-ok"),
-      )
-    );
+    return [
+      requirement("tool-failure", !!failure),
+      requirement(
+        "tool-recovery",
+        !!failure &&
+          tools.some(
+            (tool) =>
+              tool.eventIndex > failure.eventIndex &&
+              ok(tool) &&
+              scriptCommand(tool, "tools/recover.cjs", worktree) &&
+              tool.output.includes("spillway-recovery-ok"),
+          ),
+      ),
+    ];
   }
   if (capability === "test-driven-repair")
-    return check.some(
-      (fail) =>
-        fail.exitCode !== null &&
-        fail.exitCode !== 0 &&
-        /AssertionError|ERR_ASSERTION/.test(fail.output) &&
-        edits.some(
-          (edit) =>
-            edit.eventIndex > fail.eventIndex &&
-            check.some(
-              (pass) =>
-                ok(pass) &&
-                pass.eventIndex > edit.eventIndex &&
-                pass.output.includes("spillway-acceptance-ok"),
+    return [
+      requirement(
+        "repair-sequence",
+        check.some(
+          (fail) =>
+            fail.exitCode !== null &&
+            fail.exitCode !== 0 &&
+            /AssertionError|ERR_ASSERTION/.test(fail.output) &&
+            edits.some(
+              (edit) =>
+                edit.eventIndex > fail.eventIndex &&
+                check.some(
+                  (pass) =>
+                    ok(pass) &&
+                    pass.eventIndex > edit.eventIndex &&
+                    pass.output.includes("spillway-acceptance-ok"),
+                ),
             ),
         ),
-    );
-  return (
-    rounds >= 3 &&
-    read &&
-    search &&
-    tools.some(
-      (tool) =>
-        ok(tool) &&
-        tool.tool === "read" &&
-        toolPath(tool, "docs/ledger.jsonl", worktree) &&
-        tool.output.includes("target-seven") &&
-        Buffer.byteLength(tool.output) >= 32000,
-    ) &&
-    edits.length > 0 &&
-    check.some(
-      (tool) => ok(tool) && tool.output.includes("spillway-acceptance-ok"),
-    ) &&
-    new Set(tools.filter(ok).map((tool) => tool.round)).size >= 3
-  );
+      ),
+    ];
+  return [
+    requirement("assistant-rounds", rounds >= 3),
+    requirement("inventory-read", read),
+    requirement("ledger-search", search),
+    requirement(
+      "full-context",
+      tools.some(
+        (tool) =>
+          ok(tool) &&
+          tool.tool === "read" &&
+          toolPath(tool, "docs/ledger.jsonl", worktree) &&
+          tool.output.includes("target-seven") &&
+          Buffer.byteLength(tool.output) >= 32000,
+      ),
+    ),
+    requirement("scoped-edit", edits.length > 0),
+    requirement(
+      "acceptance-check",
+      check.some(
+        (tool) => ok(tool) && tool.output.includes("spillway-acceptance-ok"),
+      ),
+    ),
+    requirement(
+      "successful-tool-rounds",
+      new Set(tools.filter(ok).map((tool) => tool.round)).size >= 3,
+    ),
+  ];
 }
 function matchingReadPath(
   input: Record<string, unknown>,
@@ -500,12 +587,12 @@ function requestedReadPage(
   return false;
 }
 
-export function observeToolEvidence(
+export function explainToolEvidence(
   text: string,
   capability: Capability,
   worktree?: string,
   suiteVersion: 1 | 2 | 3 = 3,
-): ToolEvidence {
+): { evidence: ToolEvidence; checks: QualificationRequirementCheck[] } {
   const tools: PrivateObservation[] = [];
   let rounds = 0;
   let finalStop = false;
@@ -607,7 +694,19 @@ export function observeToolEvidence(
       output,
     });
   }
-  return {
+  const checks = [
+    requirement("complete-transcript", valid),
+    requirement("final-stop", finalStop),
+    ...requirementChecks(
+      capability,
+      capability === "multi-round"
+        ? tools.filter((tool) => !incompleteLedgerReads.has(tool.eventIndex))
+        : tools,
+      rounds,
+      worktree,
+    ),
+  ];
+  const evidence: ToolEvidence = {
     valid,
     finalStop,
     rounds,
@@ -620,18 +719,17 @@ export function observeToolEvidence(
           toolPath(tool, "docs/ledger.jsonl", worktree),
       )
       .reduce((total, tool) => total + Buffer.byteLength(tool.output), 0),
-    requirementsMet:
-      valid &&
-      finalStop &&
-      observedRequirements(
-        capability,
-        capability === "multi-round"
-          ? tools.filter((tool) => !incompleteLedgerReads.has(tool.eventIndex))
-          : tools,
-        rounds,
-        worktree,
-      ),
+    requirementsMet: checks.every((check) => check.met),
   };
+  return { evidence, checks };
+}
+export function observeToolEvidence(
+  text: string,
+  capability: Capability,
+  worktree?: string,
+  suiteVersion: 1 | 2 | 3 = 3,
+): ToolEvidence {
+  return explainToolEvidence(text, capability, worktree, suiteVersion).evidence;
 }
 async function privateRead(path: string): Promise<string> {
   const file = await open(

@@ -2,7 +2,7 @@
 
 Qualification workload revisions are immutable evidence boundaries. New runs default to v3, which distinguishes a fully delivered requested read page from lost/truncated evidence. V2 made the existing discovery glob predicate explicit; v1/v2 assets/results remain intact and retain their original interpretation. Result format version stays 1, while suiteVersion accepts 1, 2 or 3 and the workload content hash binds the revision. Budgets, protected checks and capability requirements are unchanged; old results are not regraded and no classes are automatically promoted.
 
-Status: Phase 3 implementation, 2026-10-12. Primary specification: [design.md](design.md). Phase 0/1 landed in PR #1 (main `1ab2878`). The owner then explicitly authorized Phase 2 and chose Claude Code sessions for frontier work, with no automatic paid calls. [PHASE2.md](PHASE2.md) records that authorization and the implementation handoff; [INTERFACES.md](INTERFACES.md) describes the consolidated contracts. The owner subsequently requested PR #2 merge and Phase 3 implementation; [PHASE3.md](PHASE3.md) freezes this wave after main merge `079478a`. Release and Phase 4/5 capabilities remain gated.
+Status: Phase 3 implementation, 2026-10-13. Primary specification: [design.md](design.md). Phase 0/1 landed in PR #1 (main `1ab2878`). The owner then explicitly authorized Phase 2 and chose Claude Code sessions for frontier work, with no automatic paid calls. [PHASE2.md](PHASE2.md) records that authorization and the implementation handoff; [INTERFACES.md](INTERFACES.md) describes the consolidated contracts. The owner subsequently requested PR #2 merge and Phase 3 implementation; [PHASE3.md](PHASE3.md) freezes this wave after main merge `079478a`. Release and Phase 4/5 capabilities remain gated.
 
 ## Goals and boundaries
 
@@ -158,3 +158,18 @@ Shutdown rejects new admissions and tracks HTTP route promises independently of 
 ## Phase 3 onboarding follow-up
 
 PR #3 merged at main 323ae92; the owner authorized continued work on 2026-10-13. Service-owned diagnostics report bounded local catalog/harness and operational readiness without inference or policy changes. A bundled original Apache-2.0 pilot creator materializes a new disposable repository and private pinned tasks outside existing Git checkouts, without banking or acceptance. CLI remains thin; diagnostics cannot certify model capability. See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md) for frozen ownership and verification.
+
+## Saved diagnostics and task-spec measurements
+
+PR #4 merged at owner request on 2026-10-13 (`940f899`). [PHASE3_EVALUATION.md](PHASE3_EVALUATION.md) freezes the follow-up. Shared authoritative observer predicates explain saved private transcripts only after exact stored-observation parity; bounded managed-path reads and bearer-only APIs protect evidence. Read-only explanations never regrade history. Pure declared spec features extend private scorecards and permission-gated public projections with fixed buckets and unknowns; counts do not imply quality, changed-file size, causality or qualification. No model calls, migrations, policy changes or new dependencies.
+
+```mermaid
+flowchart LR
+  Saved[Immutable result + workload revision] --> Replay
+  Log[Bounded private managed transcript] --> Replay[Shared observer predicates]
+  Replay --> Parity{Recorded observations match?}
+  Parity -->|yes| Checklist[Fixed requirement checklist]
+  Parity -->|no| Withheld[Visible mismatch; checklist withheld]
+  Checklist --> View[Authenticated CLI / read-only dashboard]
+  Withheld --> View
+```

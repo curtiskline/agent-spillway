@@ -34,6 +34,7 @@ import { REVIEW_RUBRIC, parseReviewReport, runLocalReview } from "./review.js";
 import { parseStrictJson } from "./json.js";
 import type { QualificationResult } from "./qualification.js";
 import { buildDoctorReport } from "./doctor.js";
+import { buildQualificationDiagnostics } from "./qualification-diagnostics.js";
 import type { EvidenceStatus } from "./contracts.js";
 
 const sensitive =
@@ -1433,6 +1434,14 @@ export class Controller {
           409,
         );
       }
+    });
+  }
+  async qualificationDiagnostics(id: string) {
+    const { job, result } = await this.qualificationDetail(id);
+    return buildQualificationDiagnostics({
+      job,
+      result,
+      dataDir: this.config.data_dir,
     });
   }
   async qualificationDetail(

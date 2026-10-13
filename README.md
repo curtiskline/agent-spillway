@@ -104,9 +104,13 @@ spillway report --json
 spillway audit list
 spillway qualify list
 spillway qualify show JOB-ID
+spillway qualify explain JOB-ID
+spillway qualify explain JOB-ID --json
 ```
 
-Scorecards distinguish local and frontier usage, missing measurements, owner decisions and small samples. Optional `--owner-minutes N` on accept/reject records owner time. Planning usage can be submitted from a private file with `spillway usage TASK-ID --file PATH`. Accepted local/checks-only results are sampled once for an audit (`audit_rate` defaults to 0.3). Use `spillway audit show AUDIT-ID` and `spillway audit submit AUDIT-ID --file PATH` from an authorized Claude Code session; pending audits remain visible when frontier availability or repository permission blocks review. An audit preserves the original owner decision and result SHA.
+Scorecards distinguish local and frontier usage, missing measurements, owner decisions and small samples. Declared task measurements group outcomes by body bytes, scope-pattern counts, listed context and check plans. Counts describe the specification; they do not measure task quality, files changed or causality. Percentages require at least 20 owner decisions in each bucket. Optional `--owner-minutes N` on accept/reject records owner time. Planning usage can be submitted from a private file with `spillway usage TASK-ID --file PATH`. Accepted local/checks-only results are sampled once for an audit (`audit_rate` defaults to 0.3). Use `spillway audit show AUDIT-ID` and `spillway audit submit AUDIT-ID --file PATH` from an authorized Claude Code session; pending audits remain visible when frontier availability or repository permission blocks review. An audit preserves the original owner decision and result SHA.
+
+`qualify explain` and the qualification dashboard show a fixed tool-requirement checklist from saved private transcripts under the recorded workload revision. A checklist appears only when replay matches the stored observations. Missing, unsafe or changed logs are reported without exposing their contents. Inspection makes no model calls and never changes a stored result or grants qualification.
 
 Run the seven fixed tool workloads through the existing OpenCode harness:
 

@@ -223,6 +223,7 @@ export class ServiceClient {
             path.endsWith("/frontier-complete")
             ? 24 * 60 * 60 * 1000
             : [
+                  "/api/v1/doctor",
                   "/api/v1/export",
                   "/api/v1/endpoints",
                   "/api/v1/evidence/sync",

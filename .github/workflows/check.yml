@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: node scripts/validate-community.mjs
+      - run: node scripts/plugin-footprint.mjs
       - run: node scripts/onboarding-smoke.mjs
       - name: Installed OpenCode wire contract (no provider inference)
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24

@@ -77,3 +77,21 @@ The durable v2 job completed without uncertainty and remains unqualified. The GP
 Q37 versions that correction in workload v3 without changing stored v1/v2 outcomes. The [OpenCode 1.19.0 read implementation](https://github.com/anomalyco/opencode/blob/v1.19.0/packages/opencode/src/tool/read.ts) uses `truncated` for both pagination and capped output; v3 requires matching structured page boundaries and complete rendered content before allowing an explicit page. Capped/line-truncated or ambiguous evidence still fails, and partial ledger pages cannot replace the required full-context read. Saved-trace replay and fixture checks can verify the parser correction; they do not establish a new qualification run. A fresh real v3 qualification remains a separate gate.
 
 The saved repair transcript was replayed against both observer versions: v2 reproduces its stored invalid observation, while v3 recognizes the completely delivered page and required failure/edit/pass sequence. Result and transcript hashes remain unchanged. Full local validation passes 417 tests, typecheck/lint/build and isolated package onboarding; no new model inference or v3 real qualification was performed. Recovery and multi-round omissions remain separate observed requirements.
+
+## Fresh v3 observation — 2026-10-13
+
+After PR #3 merged, one separate v3 run used the verified installed package. Read-only loaded-instance inspections before and after the run found unchanged load, prediction and catalog settings, including full GPU offload and 32,768 context. Hardware/artifact metadata remains operator-reported; these API observations do not prove loaded weight bytes.
+
+| Capability | V3 outcome | Duration (seconds) |
+| --- | --- | --- |
+| Discovery | Passed | 60.4 |
+| Read/search | Passed | 49.8 |
+| Structured edit | Passed | 25.3 |
+| Command | Passed | 86.1 |
+| Tool error recovery | Failed tool evidence | 155.8 |
+| Test-driven repair | Passed | 89.4 |
+| Multi-round/context | Failed full-context evidence | 44.9 |
+
+All seven protected code checks passed within the unchanged case budget. Independent review verified provenance, complete metadata/current suite hash, exact SHA pins/ancestry/clean worktrees/source-only scope/protected fixtures, and reran baseline/result checks in clean committed snapshots. Every baseline check failed and every result check passed. Saved logs replayed exactly to the stored v3 observations; result, metadata and configuration files stayed unchanged.
+
+Recovery again wrapped the requested direct failure/recovery commands and masked exit 17 with exit 0. Multi-round used the correct grep and twelve rounds, but read only ledger lines 168–179, exposing 2,270 context bytes instead of the required complete 256-line read and at least 32,000 bytes. A correct result value cannot substitute for those observed requirements. The job completed without uncertainty, passed five capabilities and remains unqualified. Prior outcomes are unchanged; public projection refuses this result. No further automatic retries, class promotion or profile publication follow from this observation.

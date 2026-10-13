@@ -44,6 +44,22 @@ spillway dashboard
 
 The service drains eligible work one task at a time. To drive one attempt manually, use `spillway run --once`; it calls a running service or temporarily starts the same controller using private configuration. [The example task](examples/tasks/hello.md) needs your registered disposable repository path, scope/context and trusted checks. For a fixture-style demonstration, choose `review: checks-only` and explicitly set `allow_checks_only: true`; this is not a qualification claim. Inspect the report and result branch before `spillway accept TASK-ID` or `spillway reject TASK-ID`. Acceptance records an owner decision and does not merge the branch.
 
+## Onboarding checks and versioned pilot
+
+After starting the service, run `spillway doctor` or `spillway doctor --json`. A failure returns exit 1 with guidance for service compatibility, exact harness versions, unavailable local catalogs, interrupted execution or evidence delivery. Warnings describe active work, pending delivery, skipped nonlocal catalogs and operator-asserted class permissions. Diagnostics inspect bounded local catalogs and harness versions; they run no inference, install nothing and change no permissions or policy. They do not certify model capability.
+
+Create the original Apache-2.0 pilot in a new directory whose parent already exists, outside every Git checkout:
+
+```sh
+spillway pilot create ~/spillway-pilot
+```
+
+This creates a disposable `repo/`, private task files in `tasks/` and a private `manifest.json` with the exact baseline SHA and task-set hash. Existing destinations and symlinked parents are refused. Failed setup preserves its new directory for inspection; retry with a fresh destination. No tasks are banked or accepted automatically.
+
+Register the printed repository in private config and restart the service after changing config. The greeting/mechanical and slug/small-fix tasks have disjoint scopes, protected checks and default local review. Configure only the task classes you explicitly permit for experiments; generated tasks do not grant class permissions. The permission/risky task requires a frontier session and holds while availability or repository policy denies it. Bank one task through the ordinary workflow, for example `spillway add ~/spillway-pilot/tasks/pilot-greeting.md`, then inspect its verified result and review before making an owner decision. This pilot is tuning evidence, separate from held-out evaluation and the fixed qualification workload. See [the task-set contract](eval/tasks/v1/README.md).
+
+`npm run measure:plugin` reports static plugin file and descriptor byte counts. Token count is explicitly unknown; runtime MCP descriptions, hook output and vendor/session context are excluded. The same measurement runs in CI and isolated package onboarding. Live Claude marketplace/session and clean-machine operation remain separate release gates.
+
 ## Per-user background service
 
 After building, configuring the private file and stopping any foreground Spillway service:

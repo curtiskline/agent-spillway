@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "suiteVersion": 1,
+  "license": "Apache-2.0",
+  "tasks": [
+    {"id":"pilot-greeting","class":"mechanical","expectedWorker":"local","source":"src/greeting.cjs","check":"checks/greeting.cjs","template":"templates/pilot-greeting.md"},
+    {"id":"pilot-slug","class":"small-fix","expectedWorker":"local","source":"src/slug.cjs","check":"checks/slug.cjs","template":"templates/pilot-slug.md"},
+    {"id":"pilot-permission","class":"risky","expectedWorker":"frontier-session","source":"src/permission.cjs","check":"checks/permission.cjs","template":"templates/pilot-permission.md"}
+  ]
+}

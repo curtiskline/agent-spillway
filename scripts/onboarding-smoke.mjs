@@ -78,6 +78,9 @@ try {
       /(?:service\.json|queue\.sqlite|config\.yaml|\.env)$/.test(file.path),
     ),
   );
+  for (const path of ["eval/tasks/v1/manifest.json", "eval/tasks/v1/checks/greeting.cjs", "dist/doctor.js", "dist/pilot.js", "scripts/plugin-footprint.mjs"]) {
+    assert.ok(packed[0].files.some(file => file.path === path));
+  }
   stage = "install";
   await command(
     "npm",
@@ -215,6 +218,20 @@ try {
     ["source", checkout, join(checkout, "dist", "cli.js")],
     ["package", packageDir, join(install, "node_modules", ".bin", "spillway")],
   ]) {
+    stage = `${label}-pilot`;
+    const pilot = JSON.parse((await command(process.execPath, [entry, "pilot", "create", join(root, `${label}-pilot`)], home)).stdout);
+    assert.equal(pilot.suiteVersion, 1);
+    assert.equal(pilot.tasks.length, 3);
+    assert.match(pilot.suiteHash, /^[a-f0-9]{64}$/);
+    assert.equal((await command("git", ["rev-parse", "HEAD"], pilot.repo)).stdout.trim(), pilot.baseSha);
+    assert.equal((await command("git", ["status", "--porcelain"], pilot.repo)).stdout.trim(), "");
+    for (const task of pilot.tasks) assert.ok((await readFile(task.path, "utf8")).includes(pilot.baseSha));
+    stage = `${label}-footprint`;
+    const footprint = JSON.parse((await command(process.execPath, [join(directory, "scripts", "plugin-footprint.mjs")], home)).stdout);
+    assert.equal(footprint.scope, "static-plugin-assets");
+    assert.equal(footprint.tokenCount, null);
+    assert.ok(footprint.totals.descriptorBytes > 0);
+    assert.ok(footprint.entries.some(entry => entry.path === ".mcp.json"));
     stage = `${label}-fixture`;
     const { startService } = await import(
       pathToFileURL(join(directory, "dist", "server.js")).href
@@ -324,6 +341,10 @@ try {
       (await cli(["--version"])).stdout.trim(),
       packageManifest.version,
     );
+    const diagnostic = JSON.parse((await cli(["doctor", "--json"])).stdout);
+    assert.equal(diagnostic.ok, true);
+    assert.ok(diagnostic.checks.some(check => check.id === "qualification" && check.status === "warning"));
+    assert.ok(!(await cli(["doctor"])).stdout.includes(config.endpoints[0].url));
     await cli(["lint", task]);
     await cli(["add", task]);
     assert.equal(JSON.parse((await cli(["run", "--once"])).stdout).taskId, id);

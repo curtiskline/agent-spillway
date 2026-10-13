@@ -13,6 +13,7 @@ New runs use workload v3. V2 disclosed the existing discovery predicate; v3 corr
 | [0007](decisions/0007-phase3-evidence-and-evaluation.md) | Transactional evidence, sampled owner-session audits and reproducible evaluation | Explicit Phase 3 authorization after PR #2; crash-safe private delivery, truthful small-sample reports, publication opt-in, pinned tool qualification and durable job fences. |
 | [0008](decisions/0008-versioned-workload-correction.md) | Version discovery instruction correction without regrading | Make the exact existing glob predicate explicit in v2, preserve v1 assets/results and strict historical parsing. |
 | [0009](decisions/0009-read-pagination-evidence.md) | Version complete-page evidence correction | OpenCode marks normal pagination as truncated; prove complete explicit pages while preserving loss detection, full-context requirements and history. |
+| [0010](decisions/0010-onboarding-and-pilot.md) | Service diagnostics and versioned disposable pilot before wider automation | Finish Phase 3 onboarding/evaluation without inference, implicit acceptance or release claims. |
 
 ## Scope and owner decisions
 

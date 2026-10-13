@@ -180,3 +180,6 @@ Owner-authorized PR #5 continuation adds an exclusive standalone starter-config 
 
 
 Real Linux service verification uses a dedicated disposable Ubuntu CI user and the installed package with actual systemd manager calls. Synthetic inference preserves the provider boundary; no desktop/model/owner/release claim follows. Frozen isolation/lifecycle contracts: [PHASE3_LINUX.md](PHASE3_LINUX.md).
+
+
+Pinned real Claude administrative installation is tested separately from live sessions. Fresh temporary homes, exact asset identity and no inherited account data prevent installation verification from affecting the owner runtime; see [PHASE3_MARKETPLACE.md](PHASE3_MARKETPLACE.md).

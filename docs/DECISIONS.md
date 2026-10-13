@@ -60,3 +60,6 @@ ADR [0012](decisions/0012-private-configuration-bootstrap.md) records empty clas
 
 
 ADR [0013](decisions/0013-linux-service-verification.md) records real systemd lifecycle verification with a dedicated disposable CI account and synthetic responses; no runtime contract or release-gate changes.
+
+
+ADR [0014](decisions/0014-marketplace-installation-verification.md) separates actual administrative marketplace lifecycle verification from model/session/owner evidence.

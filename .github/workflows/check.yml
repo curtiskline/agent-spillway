@@ -94,3 +94,30 @@ jobs:
             sudo userdel --remove spillway-ci || cleanup_failed=1
             exit "$cleanup_failed"
           fi
+  marketplace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Install pinned administrative Claude CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          marketplace_cli_dir="$RUNNER_TEMP/spillway-marketplace-cli"
+          mkdir -m 700 "$marketplace_cli_dir"
+          mkdir -m 700 "$marketplace_cli_dir/home" "$marketplace_cli_dir/tmp"
+          node_directory="$(dirname "$(command -v node)")"
+          /usr/bin/env -i HOME="$marketplace_cli_dir/home" TMPDIR="$marketplace_cli_dir/tmp" PATH="$node_directory:/usr/bin:/bin" NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_IGNORE_SCRIPTS=true npm install --prefix "$marketplace_cli_dir" --ignore-scripts --no-audit --no-fund @anthropic-ai/claude-code@2.1.296
+          CLAUDE_INSTALLER="$marketplace_cli_dir/node_modules/@anthropic-ai/claude-code/install.cjs" python3 - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          assert hashlib.sha256(Path(os.environ['CLAUDE_INSTALLER']).read_bytes()).hexdigest() == '32a7b2429d7447c5aa043e383bcf9a72e0b233dff66336ea4b5b32531da981ad'
+          PY
+          /usr/bin/env -i HOME="$marketplace_cli_dir/home" TMPDIR="$marketplace_cli_dir/tmp" PATH="$node_directory:/usr/bin:/bin" node "$marketplace_cli_dir/node_modules/@anthropic-ai/claude-code/install.cjs"
+      - name: Current-source administrative install (no sessions or model calls)
+        run: node scripts/marketplace-smoke.mjs --claude "$RUNNER_TEMP/spillway-marketplace-cli/node_modules/.bin/claude"
+      - name: Anonymous public-source administrative install (no sessions or model calls)
+        run: node scripts/marketplace-smoke.mjs --claude "$RUNNER_TEMP/spillway-marketplace-cli/node_modules/.bin/claude" --public-source

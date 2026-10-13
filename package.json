@@ -34,6 +34,7 @@
     "smoke:onboarding": "node scripts/onboarding-smoke.mjs",
     "smoke:harness": "node scripts/harness-wire-smoke.mjs",
     "smoke:systemd": "node scripts/systemd-smoke.mjs",
+    "smoke:marketplace": "node scripts/marketplace-smoke.mjs",
     "measure:plugin": "node scripts/plugin-footprint.mjs"
   },
   "dependencies": {

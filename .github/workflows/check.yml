@@ -33,3 +33,64 @@ jobs:
           npm install --prefix "$wire_harness_dir" --ignore-scripts --no-audit --no-fund opencode-ai@1.19.0
           node "$wire_harness_dir/node_modules/opencode-ai/postinstall.mjs"
           node scripts/harness-wire-smoke.mjs "$wire_harness_dir/node_modules/.bin/opencode"
+  systemd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Provision disposable user and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if getent passwd spillway-ci >/dev/null || test -e /home/spillway-ci || test -L /home/spillway-ci; then
+            exit 1
+          fi
+          package_staging="$RUNNER_TEMP/spillway-systemd-package"
+          mkdir -m 700 "$package_staging"
+          npm pack --ignore-scripts --pack-destination "$package_staging"
+          sudo useradd --create-home --home-dir /home/spillway-ci --shell /bin/bash spillway-ci
+          touch "$RUNNER_TEMP/spillway-systemd-account-created"
+          sudo chmod 700 /home/spillway-ci
+          sudo install -d -m 700 -o spillway-ci -g spillway-ci /home/spillway-ci/package /home/spillway-ci/tmp
+          package_files=("$package_staging"/*.tgz)
+          test "${#package_files[@]}" -eq 1
+          sudo install -m 600 -o spillway-ci -g spillway-ci "${package_files[0]}" /home/spillway-ci/package.tgz
+          sudo install -m 600 -o spillway-ci -g spillway-ci scripts/systemd-smoke.mjs /home/spillway-ci/systemd-smoke.mjs
+          node_directory="$(dirname "$(command -v node)")"
+          sudo -u spillway-ci /usr/bin/env -i HOME=/home/spillway-ci PATH="$node_directory:/usr/bin:/bin" TMPDIR=/home/spillway-ci/tmp NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_IGNORE_SCRIPTS=true npm install --prefix /home/spillway-ci/package --omit=dev --ignore-scripts --no-audit --no-fund /home/spillway-ci/package.tgz
+          sudo loginctl enable-linger spillway-ci
+          sudo systemctl start "user@$(id -u spillway-ci).service"
+      - name: Actual installed-package systemd user lifecycle (synthetic inference)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_directory="$(dirname "$(command -v node)")"
+          disposable_uid="$(id -u spillway-ci)"
+          sudo -u spillway-ci /usr/bin/env -i HOME=/home/spillway-ci USER=spillway-ci LOGNAME=spillway-ci XDG_RUNTIME_DIR="/run/user/$disposable_uid" PATH="$node_directory:/usr/bin:/bin" TMPDIR=/home/spillway-ci/tmp SPILLWAY_SYSTEMD_SMOKE=1 SPILLWAY_INHERITED_SENTINEL=fixture-only OPENAI_API_KEY=fixture-only-not-a-credential node /home/spillway-ci/systemd-smoke.mjs --package /home/spillway-ci/package/node_modules/agent-spillway
+      - name: Remove dedicated CI account and manager
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f "$RUNNER_TEMP/spillway-systemd-account-created"; then
+            disposable_uid="$(id -u spillway-ci)"
+            test "$disposable_uid" -gt 0
+            test "$disposable_uid" -ne "$(id -u)"
+            cleanup_failed=0
+            sudo loginctl disable-linger spillway-ci || cleanup_failed=1
+            if sudo loginctl show-user spillway-ci >/dev/null 2>&1; then
+              sudo loginctl terminate-user spillway-ci || cleanup_failed=1
+            fi
+            sudo systemctl stop "user@$disposable_uid.service" || cleanup_failed=1
+            kill_status=0
+            sudo pkill --signal KILL --uid "$disposable_uid" || kill_status=$?
+            if test "$kill_status" -gt 1; then cleanup_failed=1; fi
+            sudo userdel --remove spillway-ci || cleanup_failed=1
+            exit "$cleanup_failed"
+          fi

@@ -1,0 +1,3 @@
+# ADR 0013: Real systemd lifecycle in disposable CI
+
+Accepted 2026-10-13 after PR #6 merge. Renderer/executor fixtures cannot prove systemd starts the installed package or preserves queue/evidence through restarts. Add an opt-in real-manager smoke under a dedicated disposable CI account, using synthetic model responses and no provider credentials. Keep provisioning outside the application, fail on unsupported/missing manager conditions, and clean only the dedicated unit/account. No runtime contract, policy, dependency or model capability changes are authorized by this verification. A green run establishes tested Linux service operations; live desktop/Claude onboarding and real qualification/owner/release gates remain separate. See [frozen plan](../PHASE3_LINUX.md).

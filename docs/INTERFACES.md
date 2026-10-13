@@ -208,3 +208,6 @@ The frozen additive contracts are in [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md
 ## Private configuration bootstrap
 
 Profile qualified_classes may be empty; no task grant is implied. planConfig(input,overrides?) validates prospective configuration without filesystem mutations; validateConfig retains existing preparation. Standalone init --from INPUT --directory NEW_ROOT returns the closed InitReceipt and creates only a new private root/config/data. Exact input, privacy/refusal, dependencies and ownership are frozen in [PHASE3_CONFIGURATION.md](PHASE3_CONFIGURATION.md).
+
+
+No application interfaces change for Linux lifecycle verification. The CI-only script takes an installed package path and requires explicit disposable-account opt-in. It invokes real CLI/manager/HTTP contracts; see [PHASE3_LINUX.md](PHASE3_LINUX.md).

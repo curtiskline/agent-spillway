@@ -57,3 +57,6 @@ Complete reproducible real model/artifact/license/server/settings metadata and b
 ADR [0011](decisions/0011-saved-diagnostics-and-spec-measurements.md) records owner-authorized PR #4 continuation: saved transcript parity before explanations, declared-only task measurements, immutable historical grades and no additional inference.
 
 ADR [0012](decisions/0012-private-configuration-bootstrap.md) records empty class grants for qualification-only setup and exclusive private initialization after PR #5 merge.
+
+
+ADR [0013](decisions/0013-linux-service-verification.md) records real systemd lifecycle verification with a dedicated disposable CI account and synthetic responses; no runtime contract or release-gate changes.

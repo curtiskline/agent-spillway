@@ -138,6 +138,8 @@ Public export requires a separate repository `publication.public_url` opt-in and
 
 With OpenCode installed, `node scripts/harness-wire-smoke.mjs /path/to/opencode` verifies one actual primary request, temperature and tool permissions against a local synthetic server, without provider inference. For package/fixture onboarding validation after a build, run `npm run smoke:onboarding`; community schemas are checked with `npm run validate:community`. These do not make provider calls or prove live Claude marketplace installation.
 
+The Linux CI lifecycle job uses a dedicated disposable user and the installed package with a real systemd user manager, while model responses remain synthetic. Its guarded smoke script refuses ordinary accounts and existing service definitions. See [Linux verification boundaries](docs/PHASE3_LINUX.md); live desktop and Claude onboarding remain separate gates.
+
 ## Claude Code plugin and MCP
 
 For local development, make the built `spillway` CLI available in PATH and launch Claude Code with `claude --plugin-dir ./plugins/spillway`. The plugin includes `/spillway:bank`, `/spillway:status`, `/spillway:setup`, a SessionStart summary hook, and reviewer/frontier-worker/auditor subagents for explicitly authorized owner sessions. It follows the [official plugin manifest](https://code.claude.com/docs/en/plugins-reference), [hook reference](https://code.claude.com/docs/en/hooks) and [subagent reference](https://code.claude.com/docs/en/sub-agents). The installed CLI must match the service version; incompatible descriptors are rejected. Setup supports source builds and per-user service installation, respects existing authorization and does not enroll credentials or paid providers.

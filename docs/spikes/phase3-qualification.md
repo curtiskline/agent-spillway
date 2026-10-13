@@ -56,4 +56,20 @@ The owner then selectively unloaded and reloaded the same model with explicit fu
 
 Independent review verified all seven result SHA pins, ancestry, clean worktrees, source-only changes, protected fixture integrity and code checks, and reparsed the recorded tool evidence. Recovery used command wrappers masking the deliberate exit 17; multi-round read the full context across eleven rounds but omitted required grep. Discovery used glob `**/*`, while the observer required `docs/**` without disclosing that pattern in the instruction. Report this narrow instruction/grader mismatch accurately, not as general inability to discover files.
 
-The run remains unqualified and unchanged. ADR 0008 introduces a separate v2 workload that states the existing exact discovery predicate, retaining v1 assets/results and all verification requirements. A later v2 run will have its own suite version and hash. No community profile, coding-class promotion or release follows from the v1 comparison.
+The run remains unqualified and unchanged. ADR 0008 introduces a separate v2 workload that states the existing exact discovery predicate, retaining v1 assets/results and all verification requirements. No community profile, coding-class promotion or release follows from the v1 comparison.
+
+After full local/package verification and an idle service upgrade, the separate real v2 run completed with the same full-offload/context/prediction settings. It has a distinct suite version and hash; earlier outcomes are not relabeled or combined into a qualifying result.
+
+| Capability | V2 qualification outcome | Duration (seconds) |
+| --- | --- | --- |
+| Discovery | Passed | 70.2 |
+| Read/search | Passed | 35.6 |
+| Structured edit | Passed | 24.1 |
+| Command | Passed | 64.1 |
+| Tool error recovery | Failed tool evidence | 48.0 |
+| Test-driven repair | Failed transcript completeness | 68.1 |
+| Multi-round/context | Failed tool evidence | 53.2 |
+
+All seven independent protected code checks passed. The execution agent independently verified the real provenance, complete metadata, current suite/hash, exact commit pins/ancestry, clean source-only worktrees and unchanged protected files, and reparsed the observations. Recovery again masked the required exit 17. Test-driven repair performed the required failure/edit/pass sequence, but a truncated read invalidated transcript completeness. Multi-round read the required context across thirteen rounds but omitted grep. Discovery now satisfies its explicit exact-pattern requirement.
+
+The durable v2 job completed without uncertainty and remains unqualified. The GPU configuration change resolved the observed timing bottleneck; passing source checks does not replace the remaining observed-tool gates or establish general model reliability. The private service retains both ready unaccepted ordinary tasks, frontier off and zero pending evidence. No further automatic qualification retries, public profile or release are scheduled.

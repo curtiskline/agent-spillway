@@ -30,3 +30,5 @@ Portable Node filesystem checks detect observable substitutions using exclusive 
 ## Local verification
 
 Clients implemented the initializer; execution added four durable empty-grant regressions; independent security review verified 45 distinct focused checks with no remaining finding. Full 565 tests/44 files, strict type/lint/build, isolated source/package bootstrap (empty grants→doctor→admission denial→separate fixture workload), community validation and installed OpenCode worker/reviewer fixture wire checks pass. No private operator runtime/config/model change or inference occurred.
+
+Code head `6929390` passes Linux Node22/24, macOS Node24 and secrets CI. [PR #6](https://github.com/curtiskline/agent-spillway/pull/6) holds the reviewable follow-up. Existing private operator runtime/config/queue/history remain untouched; release and actual live onboarding stay separately gated.

@@ -31,6 +31,17 @@ import { flushEvidence } from "./evidence.js";
 import { buildScorecard, type Scorecard } from "./report.js";
 import { exportSanitized } from "./export.js";
 import type { EvidenceStatus } from "./contracts.js";
+import type { QualificationDiagnostics } from "./qualification-diagnostics.js";
+
+function qualificationChecklistHtml(report: QualificationDiagnostics): string {
+  const statusMessages = {
+    available: "Saved transcript matches recorded observations.",
+    "not-recorded": "No saved transcript is recorded for this case.",
+    unavailable: "Saved transcript is unavailable or unsafe to read.",
+    mismatch: "Saved transcript differs from recorded observations; checklist withheld.",
+  };
+  return `<h2>Saved tool evidence</h2><p>Read-only explanation under the recorded workload version. Stored results remain unchanged. Passing tool evidence alone does not establish qualification.</p>${report.cases.map(row => `<details><summary>${escapeHtml(row.capability)} · ${row.status === "available" ? `${row.checks.filter(check => !check.met).length} unmet requirements` : escapeHtml(row.status)}</summary><p>${statusMessages[row.status]}</p>${row.checks.length ? `<ul>${row.checks.map(check => `<li>${check.met ? "Observed" : "Missing"}: ${escapeHtml(check.message)}</li>`).join("")}</ul>` : ""}</details>`).join("")}`;
+}
 
 export interface ServiceHandle {
   url: string;
@@ -164,7 +175,16 @@ function scorecardMarkup(score: Scorecard): string {
         `<tr><td>${escapeHtml(role)}</td><td>${value.inputTokens.total} <small>(${value.inputTokens.known} known, ${value.inputTokens.missing} missing)</small></td><td>${value.outputTokens.total} <small>(${value.outputTokens.known} known, ${value.outputTokens.missing} missing)</small></td><td>${value.costUsd.known ? "$" + value.costUsd.total.toFixed(4) : "Unknown"} <small>(${value.costUsd.missing} missing)</small></td></tr>`,
     )
     .join("");
-  return `<div class="cards">${cards}</div><p>${counts.acceptedWhileFrontierOff.yes} accepted tasks completed while frontier was off; ${counts.acceptedWhileFrontierOff.unknown} have unknown historical availability.</p><p>${score.attempts.tasksRepaired} tasks repaired; ${score.attempts.escalationExecutions} frontier executions. Audits: ${score.audits.misses} misses among ${score.audits.completed} completed (${score.audits.selected} selected).</p><h2>By class</h2><table>${header}<tbody>${groups(counts.byClass)}</tbody></table><h2>By profile</h2><table>${header}<tbody>${groups(counts.byProfile)}</tbody></table><h2>Reported usage across local and owner-session work</h2><table><thead><tr><th>Role</th><th>Input tokens</th><th>Output tokens</th><th>Reported cost</th></tr></thead><tbody>${usage}</tbody></table><p><small>Missing usage is unknown. Small samples remain counts; rates require 20 observations. Qualification tasks are excluded (${score.qualificationExcluded}). These results do not establish quota savings without a baseline.</small></p><p>Owner time: ${score.ownerMinutes.total} reported minutes; ${score.ownerMinutes.missing} missing.</p>`;
+  const featureDimensions = [
+    ["Checks declared", score.taskSpecs.byCheckPlan],
+    ["Context declared", score.taskSpecs.byContext],
+    ["Scope patterns declared", score.taskSpecs.byScopePatterns],
+    ["Task body size", score.taskSpecs.byBodySize],
+  ] as const;
+  const featureRows = featureDimensions.flatMap(([dimension, buckets]) => Object.entries(buckets).map(([bucket, value]) =>
+    `<tr><td>${escapeHtml(dimension)}</td><td>${escapeHtml(bucket)}</td><td>${value.accepted}</td><td>${value.rejected}</td><td>${value.undecided}</td><td>${value.total}</td><td>${value.acceptance.percent === null ? "Insufficient sample" : value.acceptance.percent.toFixed(1) + "%"} <small>(${value.acceptance.denominator} owner decisions)</small></td></tr>`)).join("");
+  const featureTable = `<h2>Declared task measurements</h2><p>Counts describe the submitted specification. They do not measure task quality, files changed or causal effects. Body size uses UTF-8 bytes; 1k is 1,024 bytes. Percentages use owner decisions and require at least 20 per bucket. Missing legacy measurements remain unknown.</p><table><thead><tr><th>Measurement</th><th>Bucket</th><th>Accepted</th><th>Rejected</th><th>Undecided</th><th>Total</th><th>Owner acceptance</th></tr></thead><tbody>${featureRows}</tbody></table>`;
+  return `<div class="cards">${cards}</div><p>${counts.acceptedWhileFrontierOff.yes} accepted tasks completed while frontier was off; ${counts.acceptedWhileFrontierOff.unknown} have unknown historical availability.</p><p>${score.attempts.tasksRepaired} tasks repaired; ${score.attempts.escalationExecutions} frontier executions. Audits: ${score.audits.misses} misses among ${score.audits.completed} completed (${score.audits.selected} selected).</p><h2>By class</h2><table>${header}<tbody>${groups(counts.byClass)}</tbody></table><h2>By profile</h2><table>${header}<tbody>${groups(counts.byProfile)}</tbody></table>${featureTable}<h2>Reported usage across local and owner-session work</h2><table><thead><tr><th>Role</th><th>Input tokens</th><th>Output tokens</th><th>Reported cost</th></tr></thead><tbody>${usage}</tbody></table><p><small>Missing usage is unknown. Small samples remain counts; rates require 20 observations. Qualification tasks are excluded (${score.qualificationExcluded}). These results do not establish quota savings without a baseline.</small></p><p>Owner time: ${score.ownerMinutes.total} reported minutes; ${score.ownerMinutes.missing} missing.</p>`;
 }
 export async function startService(
   config: SpillwayConfig,
@@ -488,6 +508,19 @@ export async function startService(
       json(store.listQualificationJobs());
       return;
     }
+    const qualificationDiagnosticPath = path.match(
+      /^\/api\/v1\/qualifications\/([a-z0-9-]+)\/diagnostics$/,
+    );
+    if (req.method === "GET" && qualificationDiagnosticPath) {
+      if (!equal(bearer, token))
+        throw new SpillwayError("UNAUTHORIZED", "Authentication required.", 401);
+      json(
+        await controller.qualificationDiagnostics(
+          idSchema.parse(qualificationDiagnosticPath[1]),
+        ),
+      );
+      return;
+    }
     const qualificationPath = path.match(
       /^\/api\/v1\/qualifications\/([a-z0-9-]+)$/,
     );
@@ -711,6 +744,7 @@ export async function startService(
     const qualificationView = path.match(/^\/qualifications\/([a-z0-9-]+)$/);
     if (req.method === "GET" && qualificationView) {
       const { job, result } = await controller.qualificationDetail(idSchema.parse(qualificationView[1]));
+      const diagnostics = await controller.qualificationDiagnostics(job.id);
       const rows = result?.cases.map((row) =>
         `<tr><td>${escapeHtml(row.capability)}</td><td>${escapeHtml(row.outcome)}</td><td>${(row.durationMs / 1000).toFixed(1)} seconds</td><td>${row.observations.rounds}</td><td>${escapeHtml(row.reason ?? "")}</td></tr>`,
       ).join("") ?? "";
@@ -718,7 +752,7 @@ export async function startService(
         ? `${result.cases.filter((row) => row.outcome === "passed").length} of ${result.cases.length} passed. ${result.qualified ? "Qualified for the fixed tool workload." : "Observational result; model is not qualified."}`
         : "No final result available. Refresh to see progress.";
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(page("Qualification result", `<p>${escapeHtml(job.status)} · ${escapeHtml(job.profileId)}</p><p>${escapeHtml(outcome)}</p><p>${escapeHtml(job.reason ?? "")}</p>${result ? `<p>Provenance: ${escapeHtml(result.provenance)} · context ${escapeHtml(result.metadata.contextTokens ?? "unknown")} tokens · metadata ${result.metadataComplete ? "complete" : "incomplete"}.</p><table><thead><tr><th>Capability</th><th>Outcome</th><th>Duration</th><th>Rounds</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>` : ""}<p class="note">Owner acceptance, coding-class qualification and release remain separate decisions.</p>`, prefix));
+      res.end(page("Qualification result", `<p>${escapeHtml(job.status)} · ${escapeHtml(job.profileId)}</p><p>${escapeHtml(outcome)}</p><p>${escapeHtml(job.reason ?? "")}</p>${result ? `<p>Provenance: ${escapeHtml(result.provenance)} · context ${escapeHtml(result.metadata.contextTokens ?? "unknown")} tokens · metadata ${result.metadataComplete ? "complete" : "incomplete"}.</p><table><thead><tr><th>Capability</th><th>Outcome</th><th>Duration</th><th>Rounds</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>` : ""}${qualificationChecklistHtml(diagnostics)}<p class="note">Owner acceptance, coding-class qualification and release remain separate decisions.</p>`, prefix));
       return;
     }
     if (req.method === "GET" && path === "/endpoints") {

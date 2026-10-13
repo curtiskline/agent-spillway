@@ -78,7 +78,7 @@ try {
       /(?:service\.json|queue\.sqlite|config\.yaml|\.env)$/.test(file.path),
     ),
   );
-  for (const path of ["eval/tasks/v1/manifest.json", "eval/tasks/v1/checks/greeting.cjs", "dist/doctor.js", "dist/pilot.js", "scripts/plugin-footprint.mjs"]) {
+  for (const path of ["eval/tasks/v1/manifest.json", "eval/tasks/v1/checks/greeting.cjs", "dist/doctor.js", "dist/pilot.js", "dist/task-features.js", "dist/qualification-diagnostics.js", "scripts/plugin-footprint.mjs"]) {
     assert.ok(packed[0].files.some(file => file.path === path));
   }
   stage = "install";
@@ -345,6 +345,13 @@ try {
     assert.equal(diagnostic.ok, true);
     assert.ok(diagnostic.checks.some(check => check.id === "qualification" && check.status === "warning"));
     assert.ok(!(await cli(["doctor"])).stdout.includes(config.endpoints[0].url));
+    service.store.createQualificationJob({ id: "saved-diagnostic", profileId: "fixture", root: join(dataDir, "qualifications", "saved-diagnostic") });
+    service.store.finishQualificationJob("saved-diagnostic", "failed", undefined, "Fixture preflight failure");
+    const saved = JSON.parse((await cli(["qualify", "explain", "saved-diagnostic", "--json"])).stdout);
+    assert.equal(saved.version, 1);
+    assert.equal(saved.cases.length, 7);
+    assert.ok(saved.cases.every(row => row.status === "not-recorded" && row.checks.length === 0));
+    assert.match((await cli(["qualify", "explain", "saved-diagnostic"])).stdout, /Stored results remain unchanged/);
     await cli(["lint", task]);
     await cli(["add", task]);
     assert.equal(JSON.parse((await cli(["run", "--once"])).stdout).taskId, id);

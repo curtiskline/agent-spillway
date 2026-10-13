@@ -1,5 +1,5 @@
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
-import { readFile,writeFile } from 'node:fs/promises';
+import { readFile,writeFile,chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { startService,type ServiceHandle } from '../src/server.js';
@@ -9,6 +9,7 @@ import { parseTask } from '../src/task.js';
 import type { AuditRecord,EvidenceStatus,HarnessAdapter,TaskDetail } from '../src/contracts.js';
 import type { Scorecard } from '../src/report.js';
 import * as qualification from '../src/qualification.js';
+import type { QualificationDiagnostics } from '../src/qualification-diagnostics.js';
 import { fixture } from './helpers.js';
 
 const qualificationProgram = `
@@ -155,6 +156,45 @@ describe('Phase 3 integrated private service (fixture inference only)', () => {
     expect(qualified.status).toBe(200); expect(qualificationCalls).toBe(7); for (const row of qualified.data!.result.cases) expect(row.outcome,`${row.capability}: ${row.reason} ${JSON.stringify(row.observations)}`).toBe('passed');
     expect(qualified.data?.result).toMatchObject({ provenance: 'fixture',qualified: false,metadataComplete: true }); expect(qualified.data?.result.failures).toContain('fixture-provenance');
     expect(f.config.profiles[0]!.qualified_classes).toEqual(classes); expect(s.store.getQualificationJob(qualified.data!.jobId)?.status).toBe('completed'); expect((await api<Scorecard>('/api/v1/report')).data?.tasks.total).toBe(0);
+    const id = qualified.data!.jobId;
+    const stored = await s.controller.qualificationDetail(id);
+    const resultBytes = await readFile(stored.job.resultPath!);
+    const evidence = s.store.listEvidence(0, 1000);
+    const diagnostics = await api<QualificationDiagnostics>(`/api/v1/qualifications/${id}/diagnostics`);
+    expect(diagnostics.status).toBe(200);
+    expect(diagnostics.data?.cases).toHaveLength(7);
+    for (const row of diagnostics.data!.cases) {
+      expect(row.status).toBe('available');
+      expect(row.checks.length).toBeGreaterThan(2);
+      expect(row.checks.every(check => check.met)).toBe(true);
+    }
+    const log = stored.result!.cases[0]!.logPath!;
+    const originalLog = await readFile(log);
+    try {
+      await writeFile(log, Buffer.concat([originalLog, Buffer.from('\nPRIVATE-MISMATCH-MARKER\n')]));
+      const mismatch = await api<QualificationDiagnostics>(`/api/v1/qualifications/${id}/diagnostics`);
+      expect(mismatch.data?.cases[0]).toMatchObject({ status: 'mismatch', checks: [] });
+      expect(JSON.stringify(mismatch)).not.toContain('PRIVATE-MISMATCH-MARKER');
+      await writeFile(log, originalLog);
+      await chmod(log, 0o644);
+      const unavailable = await api<QualificationDiagnostics>(`/api/v1/qualifications/${id}/diagnostics`);
+      expect(unavailable.data?.cases[0]).toMatchObject({ status: 'unavailable', checks: [] });
+    } finally { await chmod(log, 0o600); await writeFile(log, originalLog); }
+    const handshake = await fetch(s.url + '/?token=' + s.token, { redirect: 'manual' });
+    const cookie = handshake.headers.get('set-cookie')!.split(';')[0]!;
+    const prefix = handshake.headers.get('location')!;
+    const view = await fetch(s.url + prefix + 'qualifications/' + id, { headers: { Cookie: cookie } });
+    expect(view.status).toBe(200);
+    const html = await view.text();
+    expect(html).toContain('Saved tool evidence');
+    expect(html).toContain('Stored results remain unchanged');
+    expect(html).not.toContain(log);
+    expect((await fetch(s.url + prefix + `api/v1/qualifications/${id}/diagnostics`, { headers: { Cookie: cookie } })).status).toBe(401);
+    expect(await readFile(stored.job.resultPath!)).toEqual(resultBytes);
+    expect(await s.controller.qualificationDetail(id)).toEqual(stored);
+    expect(s.store.listEvidence(0, 1000)).toEqual(evidence);
+    expect(qualificationCalls).toBe(7);
+
   });
   it('rejects nonfinite raw JSON usage before frontier review, audit or planning mutations', async () => {
     await api('/api/v1/frontier',{ available: true });

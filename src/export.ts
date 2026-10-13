@@ -8,6 +8,7 @@ import {
   type ReviewTier,
   type Usage,
 } from "./contracts.js";
+import { deriveTaskSpecFeatures, type TaskSpecFeatures } from "./task-features.js";
 
 const publicUrlSchema = z
   .string()
@@ -107,6 +108,7 @@ export interface SanitizedExport {
     class: TaskClass;
     tier: ReviewTier;
     state: (typeof TASK_STATES)[number];
+    taskSpec: TaskSpecFeatures | null;
     completedWhileFrontierOff: boolean | null;
     readyLatencyMs: number | null;
     attempts: {
@@ -386,6 +388,7 @@ export async function exportSanitized(
       class: task.spec.class,
       tier: task.reviewTier,
       state: task.state,
+      taskSpec: deriveTaskSpecFeatures(task.spec),
       completedWhileFrontierOff:
         typeof task.completedWhileFrontierOff === "boolean"
           ? task.completedWhileFrontierOff

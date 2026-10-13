@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CAPABILITIES,
   communityProjection,
+  explainToolEvidence,
   observeToolEvidence,
   qualificationMetadataSchema,
   qualificationWorkloadHash,
@@ -1152,5 +1153,123 @@ describe("tool evidence and metadata qualification boundaries", () => {
       expect(() =>
         validateCommunityProfile({ ...candidate, ...patch }),
       ).toThrow();
+  });
+});
+
+describe("authoritative qualification checklist", () => {
+  it("uses fixed capability-specific requirements even for incomplete evidence", () => {
+    const expected = {
+      discovery: ["inventory-read", "discovery-glob"],
+      "read-search": ["inventory-read", "ledger-search"],
+      "structured-edit": ["scoped-edit"],
+      command: ["command-success"],
+      "tool-error-recovery": ["tool-failure", "tool-recovery"],
+      "test-driven-repair": ["repair-sequence"],
+      "multi-round": [
+        "assistant-rounds",
+        "inventory-read",
+        "ledger-search",
+        "full-context",
+        "scoped-edit",
+        "acceptance-check",
+        "successful-tool-rounds",
+      ],
+    };
+    for (const capability of CAPABILITIES) {
+      const report = explainToolEvidence("", capability);
+      expect(report.checks.map((check) => check.id)).toEqual([
+        "complete-transcript",
+        "final-stop",
+        ...expected[capability],
+      ]);
+      expect(
+        report.checks.every(
+          (check) => !check.met || check.id === "complete-transcript",
+        ),
+      ).toBe(true);
+      expect(report.evidence.requirementsMet).toBe(false);
+      expect(observeToolEvidence("", capability)).toEqual(report.evidence);
+    }
+  });
+  it("explains exact direct-command failure and recovery independently", () => {
+    const tool = (
+      command: string,
+      exit: number,
+      output: string,
+      id: string,
+    ) => ({
+      type: "tool_use",
+      part: {
+        id,
+        callID: id,
+        tool: "bash",
+        state: {
+          status: "completed",
+          input: { command },
+          output,
+          metadata: { exit },
+        },
+      },
+    });
+    const events = [
+      { type: "step_start", part: { id: "one" } },
+      tool(
+        "node tools/failure.cjs",
+        17,
+        "Intentional qualification tool error",
+        "failure",
+      ),
+      tool("node tools/recover.cjs", 0, "spillway-recovery-ok", "recovery"),
+      { type: "step_finish", part: { reason: "stop" } },
+    ];
+    const text = (rows: unknown[]) =>
+      rows.map((row) => JSON.stringify(row)).join("\n");
+    for (const version of [1, 2, 3] as const) {
+      const passed = explainToolEvidence(
+        text(events),
+        "tool-error-recovery",
+        undefined,
+        version,
+      );
+      expect(passed.checks.every((check) => check.met)).toBe(true);
+      expect(passed.evidence).toEqual({
+        valid: true,
+        finalStop: true,
+        rounds: 1,
+        tools: [
+          {
+            tool: "bash",
+            status: "completed",
+            round: 1,
+            eventIndex: 1,
+            exitCode: 17,
+          },
+          {
+            tool: "bash",
+            status: "completed",
+            round: 1,
+            eventIndex: 2,
+            exitCode: 0,
+          },
+        ],
+        contextBytesObserved: 0,
+        requirementsMet: true,
+      });
+      const wrapped = structuredClone(events);
+      const recovery = wrapped[2] as ReturnType<typeof tool>;
+      recovery.part.state.input.command = "node tools/recover.cjs && true";
+      const failed = explainToolEvidence(
+        text(wrapped),
+        "tool-error-recovery",
+        undefined,
+        version,
+      );
+      expect(failed.checks.map((check) => [check.id, check.met])).toEqual([
+        ["complete-transcript", true],
+        ["final-stop", true],
+        ["tool-failure", true],
+        ["tool-recovery", false],
+      ]);
+    }
   });
 });

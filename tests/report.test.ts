@@ -124,6 +124,93 @@ function audit(
 }
 
 describe("ordinary-work scorecard", () => {
+  it("initializes every fixed declaration bucket, including empty snapshots", () => {
+    const features = buildScorecard(snapshot([])).taskSpecs;
+    expect(features.version).toBe(1);
+    expect(features.measures).toBe("declared-only");
+    expect(Object.keys(features.byCheckPlan)).toEqual(["checks", "justified-no-checks", "missing-checks", "unknown"]);
+    expect(Object.keys(features.byContext)).toEqual(["listed", "empty", "unknown"]);
+    expect(Object.keys(features.byScopePatterns)).toEqual(["one-pattern", "multiple-patterns", "empty", "unknown"]);
+    expect(Object.keys(features.byBodySize)).toEqual(["up-to-1k", "1k-to-4k", "over-4k", "unknown"]);
+    for (const buckets of [features.byCheckPlan, features.byContext, features.byScopePatterns, features.byBodySize])
+      for (const bucket of Object.values(buckets))
+        expect(bucket).toEqual({ total: 0, accepted: 0, rejected: 0, undecided: 0,
+          acceptance: { numerator: 0, denominator: 0, percent: null } });
+  });
+  it("places every ordinary outcome once in each dimension and excludes qualification", () => {
+    const accepted = task("accepted");
+    const rejected = task("rejected", "rejected");
+    rejected.task.spec = { ...rejected.task.spec, checks: [], no_checks_justification: "Owner explanation", context: [], scope: ["src/a", "src/b"], body: "x".repeat(1025) };
+    const held = task("held", "held");
+    held.task.spec = { ...held.task.spec, checks: [], context: [], scope: [], body: "x".repeat(4097) };
+    const legacy = task("legacy", "abandoned");
+    delete legacy.task.origin;
+    (legacy.task.spec as unknown as Record<string, unknown>).body = null;
+    const qualification = task("qualification");
+    qualification.task.origin = "qualification";
+    const data = snapshot([accepted, rejected, held, legacy, qualification]);
+    const before = JSON.stringify(data);
+    const result = buildScorecard(data);
+    expect(result.qualificationExcluded).toBe(1);
+    expect(result.taskSpecs.byCheckPlan.checks).toMatchObject({ total: 1, accepted: 1 });
+    expect(result.taskSpecs.byCheckPlan["justified-no-checks"]).toMatchObject({ total: 1, rejected: 1 });
+    expect(result.taskSpecs.byCheckPlan["missing-checks"]).toMatchObject({ total: 1, undecided: 1 });
+    expect(result.taskSpecs.byContext.empty.total).toBe(2);
+    expect(result.taskSpecs.byScopePatterns["one-pattern"].total).toBe(1);
+    expect(result.taskSpecs.byScopePatterns["multiple-patterns"].total).toBe(1);
+    expect(result.taskSpecs.byScopePatterns.empty.total).toBe(1);
+    expect(result.taskSpecs.byBodySize["up-to-1k"].total).toBe(1);
+    expect(result.taskSpecs.byBodySize["1k-to-4k"].total).toBe(1);
+    expect(result.taskSpecs.byBodySize["over-4k"].total).toBe(1);
+    for (const buckets of [result.taskSpecs.byCheckPlan, result.taskSpecs.byContext,
+      result.taskSpecs.byScopePatterns, result.taskSpecs.byBodySize]) {
+      expect(buckets.unknown).toMatchObject({ total: 1, accepted: 0, rejected: 0, undecided: 1 });
+      const total = Object.values(buckets).reduce((sum, bucket) => sum + bucket.total, 0);
+      expect(total).toBe(4);
+    }
+    expect(JSON.stringify(data)).toBe(before);
+  });
+  it.each([
+    ["x".repeat(1024), "up-to-1k"], ["x".repeat(1025), "1k-to-4k"],
+    ["x".repeat(4096), "1k-to-4k"], ["x".repeat(4097), "over-4k"],
+    ["🙂".repeat(256), "up-to-1k"], ["🙂".repeat(257), "1k-to-4k"],
+    ["🙂".repeat(1024), "1k-to-4k"], ["🙂".repeat(1025), "over-4k"],
+  ] as const)("uses inclusive UTF-8 body bucket boundaries (%#)", (body, bucket) => {
+    const detail = task("boundary");
+    detail.task.spec.body = body;
+    expect(buildScorecard(snapshot([detail])).taskSpecs.byBodySize[bucket].total).toBe(1);
+  });
+  it("uses owner-decided bucket denominators, preserves legacy decisions and suppresses small-sample percentages", () => {
+    const tasks = Array.from({ length: 19 }, (_, index) => task(`accepted-${index}`));
+    tasks.push(task("rejected", "rejected"));
+    tasks.push(...Array.from({ length: 30 }, (_, index) => task(`held-${index}`, "held")));
+    const data = snapshot(tasks);
+    data.decisions = [];
+    const bucket = buildScorecard(data).taskSpecs.byCheckPlan.checks;
+    expect(bucket).toEqual({ total: 50, accepted: 19, rejected: 1, undecided: 30,
+      acceptance: { numerator: 19, denominator: 20, percent: 95 } });
+    tasks[19]!.task.state = "held";
+    expect(buildScorecard(data).taskSpecs.byCheckPlan.checks.acceptance).toEqual({ numerator: 19, denominator: 19, percent: null });
+  });
+  it("counts declarations independently of actual attempts or changed files and states measurement limits", () => {
+    const detail = task("declarations");
+    detail.task.spec.no_checks_justification = "An extra explanation does not replace declared checks";
+    detail.task.spec.scope = ["**/*"];
+    detail.task.raw = "raw markdown ".repeat(1000);
+    detail.attempts = [attempt("declarations", 1, { verification: {
+      passed: true, changedPaths: ["a", "b", "c"], flags: [], checks: [],
+    } })];
+    const result = buildScorecard(snapshot([detail]));
+    expect(result.taskSpecs.byScopePatterns["one-pattern"].total).toBe(1);
+    expect(result.taskSpecs.byCheckPlan.checks.total).toBe(1);
+    expect(result.taskSpecs.byCheckPlan["justified-no-checks"].total).toBe(0);
+    expect(result.taskSpecs.byBodySize["up-to-1k"].total).toBe(1);
+    const formatted = formatReport(result);
+    expect(formatted).toContain("declared-only");
+    expect(formatted).toContain("do not establish quality, changed-file size, causality or eligibility");
+    expect(formatted).toContain("Scope patterns:");
+    expect(formatted).not.toContain(detail.task.raw);
+  });
   it("uses owner-decided denominators and retains held/failed/abandoned outcomes", () => {
     const result = buildScorecard(
       snapshot([

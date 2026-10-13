@@ -5,6 +5,7 @@ import {
   type TaskState,
   type Usage,
 } from "./contracts.js";
+import { deriveTaskSpecFeatures } from "./task-features.js";
 
 export interface Ratio {
   numerator: number;
@@ -16,6 +17,26 @@ export interface OutcomeCounts {
   accepted: number;
   rejected: number;
   undecided: number;
+}
+export interface TaskSpecOutcomeCounts extends OutcomeCounts {
+  acceptance: Ratio;
+}
+export interface TaskSpecScorecard {
+  version: 1;
+  measures: "declared-only";
+  byCheckPlan: Record<
+    "checks" | "justified-no-checks" | "missing-checks" | "unknown",
+    TaskSpecOutcomeCounts
+  >;
+  byContext: Record<"listed" | "empty" | "unknown", TaskSpecOutcomeCounts>;
+  byScopePatterns: Record<
+    "one-pattern" | "multiple-patterns" | "empty" | "unknown",
+    TaskSpecOutcomeCounts
+  >;
+  byBodySize: Record<
+    "up-to-1k" | "1k-to-4k" | "over-4k" | "unknown",
+    TaskSpecOutcomeCounts
+  >;
 }
 export interface DurationSummary {
   known: number;
@@ -55,6 +76,7 @@ export interface Scorecard {
   version: 1;
   generatedAt: string;
   qualificationExcluded: number;
+  taskSpecs: TaskSpecScorecard;
   tasks: OutcomeCounts & {
     states: Record<TaskState, number>;
     byClass: Record<string, OutcomeCounts>;
@@ -128,6 +150,45 @@ function groups(
   return Object.fromEntries(
     [...grouped].map(([id, list]) => [id, outcomes(list)]),
   );
+}
+function taskSpecs(tasks: TaskDetail[]): TaskSpecScorecard {
+  const buckets = <K extends string>(keys: K[]): Record<K, TaskSpecOutcomeCounts> =>
+    Object.fromEntries(keys.map((key) => [key, {
+      total: 0,
+      accepted: 0,
+      rejected: 0,
+      undecided: 0,
+      acceptance: ratio(0, 0),
+    }])) as Record<K, TaskSpecOutcomeCounts>;
+  const report: TaskSpecScorecard = {
+    version: 1,
+    measures: "declared-only",
+    byCheckPlan: buckets(["checks", "justified-no-checks", "missing-checks", "unknown"]),
+    byContext: buckets(["listed", "empty", "unknown"]),
+    byScopePatterns: buckets(["one-pattern", "multiple-patterns", "empty", "unknown"]),
+    byBodySize: buckets(["up-to-1k", "1k-to-4k", "over-4k", "unknown"]),
+  };
+  for (const { task } of tasks) {
+    const features = deriveTaskSpecFeatures(task.spec);
+    const checkPlan = !features ? "unknown" : features.checkCommands > 0
+      ? "checks" : features.hasNoChecksJustification ? "justified-no-checks" : "missing-checks";
+    const context = !features ? "unknown" : features.contextFiles > 0 ? "listed" : "empty";
+    const scope = !features ? "unknown" : features.scopePatterns === 0
+      ? "empty" : features.scopePatterns === 1 ? "one-pattern" : "multiple-patterns";
+    const body = !features ? "unknown" : features.bodyBytes <= 1024
+      ? "up-to-1k" : features.bodyBytes <= 4096 ? "1k-to-4k" : "over-4k";
+    for (const bucket of [
+      report.byCheckPlan[checkPlan], report.byContext[context],
+      report.byScopePatterns[scope], report.byBodySize[body],
+    ]) {
+      bucket.total++;
+      if (task.state === "accepted") bucket.accepted++;
+      else if (task.state === "rejected") bucket.rejected++;
+      else bucket.undecided++;
+      bucket.acceptance = ratio(bucket.accepted, bucket.accepted + bucket.rejected);
+    }
+  }
+  return report;
 }
 function elapsed(
   start: string | undefined | null,
@@ -292,6 +353,7 @@ export function buildScorecard(snapshot: ReportSnapshot): Scorecard {
     version: 1,
     generatedAt: snapshot.generatedAt,
     qualificationExcluded: snapshot.tasks.length - tasks.length,
+    taskSpecs: taskSpecs(tasks),
     tasks: {
       ...totals,
       states,
@@ -460,6 +522,18 @@ export function formatReport(scorecard: Scorecard): string {
     );
   lines.push(
     "Per-accepted values use reported partial totals only. Missing values are not zero; no quota-savings baseline is available.",
+    "Task-spec measures are declared-only: UTF-8 body bytes and declared scope, context and check counts. These counts do not establish quality, changed-file size, causality or eligibility.",
   );
+  for (const [dimension, buckets] of [
+    ["Check plan", scorecard.taskSpecs.byCheckPlan],
+    ["Context", scorecard.taskSpecs.byContext],
+    ["Scope patterns", scorecard.taskSpecs.byScopePatterns],
+    ["Body size", scorecard.taskSpecs.byBodySize],
+  ] as const)
+    lines.push(
+      `${dimension}: ${Object.entries(buckets).map(([name, counts]) =>
+        `${name} ${counts.total} tasks, owner acceptance ${fraction(counts.acceptance)}`,
+      ).join("; ")}.`,
+    );
   return lines.join("\n") + "\n";
 }

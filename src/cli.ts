@@ -14,6 +14,10 @@ import { parseStrictJson } from "./json.js";
 import { formatReport, type Scorecard } from "./report.js";
 import { formatDoctorReport, type DoctorReport } from "./doctor.js";
 import { createPilot } from "./pilot.js";
+import {
+  qualificationDiagnosticsSchema,
+  formatQualificationDiagnostics,
+} from "./qualification-diagnostics.js";
 
 interface CliOptions {
   config?: string;
@@ -26,7 +30,7 @@ interface Output {
   err(text: string): void;
 }
 const usage =
-  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: doctor [--json], pilot create DIR, serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall\nreport [--json], audit list|show ID|submit ID --file PATH\nusage ID --file PATH, export --sanitized --repo URL [--profile-file PATH]\nqualify --profile ID [--metadata PATH], qualify list|show JOB-ID|reconcile JOB-ID --worker-stopped\naccept|reject ID [--owner-minutes N]";
+  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: doctor [--json], pilot create DIR, serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall\nreport [--json], audit list|show ID|submit ID --file PATH\nusage ID --file PATH, export --sanitized --repo URL [--profile-file PATH]\nqualify --profile ID [--metadata PATH], qualify list|show JOB-ID|reconcile JOB-ID --worker-stopped, qualify explain JOB-ID [--json]\naccept|reject ID [--owner-minutes N]";
 function parseArgs(argv: string[]): CliOptions {
   const positional: string[] = [];
   const options: { config?: string; dataDir?: string } = {};
@@ -114,6 +118,30 @@ export async function runCli(
       }
       output.out(
         `Task is ready for admission.${result.warnings.length ? `\n${result.warnings.join("\n")}` : ""}`,
+      );
+      return 0;
+    }
+    if (command === "qualify" && args[0] === "explain") {
+      if (
+        ![2, 3].includes(args.length) ||
+        (args.length === 3 && args[2] !== "--json")
+      )
+        throw new SpillwayError("usage", "Use qualify explain JOB-ID [--json].");
+      const id = taskId(args[1]!);
+      const client = await clientFor(options);
+      const parsed = qualificationDiagnosticsSchema.safeParse(
+        await client.request("GET", `/api/v1/qualifications/${id}/diagnostics`),
+      );
+      if (!parsed.success || parsed.data.jobId !== id)
+        throw new SpillwayError(
+          "invalid_response",
+          "Service returned invalid qualification diagnostics.",
+          502,
+        );
+      output.out(
+        args[2] === "--json"
+          ? JSON.stringify(parsed.data, null, 2)
+          : formatQualificationDiagnostics(parsed.data),
       );
       return 0;
     }

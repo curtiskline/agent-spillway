@@ -188,7 +188,7 @@ describe("read-only local review using real Git and fixture subprocess", () => {
 if(process.argv.includes('--version')){console.log('1.2.3');process.exit(0)}
 let prompt='';for await(const b of process.stdin)prompt+=b;
 const packet=JSON.parse(prompt.split('Review packet:\\n')[1]); const mode=/MODE: ([a-z-]+)/.exec(packet.task.body)?.[1]??'accept';
-fs.writeFileSync(process.env.HOME+'/captured-packet.json',JSON.stringify({packet,config:JSON.parse(process.env.OPENCODE_CONFIG_CONTENT),args:process.argv.slice(2)}));
+fs.writeFileSync(process.env.HOME+'/captured-packet.json',JSON.stringify({packet,config:JSON.parse(process.env.OPENCODE_CONFIG_CONTENT),args:process.argv.slice(2),pid:process.pid}));
 if(mode==='tracked')fs.writeFileSync('src/hello.txt','mutated');if(mode==='untracked')fs.writeFileSync('residue.txt','evidence');if(mode==='ignored')fs.writeFileSync('residue.ignore','evidence');
 if(mode==='move-ref')execFileSync('git',['update-ref','refs/heads/spillway/reviewed',${JSON.stringify(baseSha)}]);
 if(mode==='move-head')execFileSync('git',['checkout','--detach',${JSON.stringify(baseSha)}]);
@@ -307,17 +307,43 @@ console.log(JSON.stringify({type:'step_finish',part:{reason:mode==='hang'?'tool-
       access(join(input.artifactDir, "model.json")),
     ).rejects.toThrow();
   });
-  it("times out a real fixture subprocess and retains reported usage", async () => {
-    mode("hang");
-    input.timeoutSec = 0.8;
-    const result = await runLocalReview(input);
-    expect(result.outcome).toBe("failed");
-    expect(result.reason).toContain("timeout");
-    expect(result.usage?.inputTokens).toBe(12);
-    await expect(
-      access(join(root, "data", "worktrees", "review-7")),
-    ).rejects.toThrow();
-  });
+  it(
+    "times out a real fixture subprocess and retains reported usage",
+    async () => {
+      mode("hang");
+      // Checkout preparation shares this deadline; leave loaded CI headroom
+      // so this exercises a launched subprocess rather than a preflight expiry.
+      input.timeoutSec = 10;
+      const result = await runLocalReview(input);
+      const captured = JSON.parse(
+        await readFile(
+          join(input.artifactDir, "harness-home", "captured-packet.json"),
+          "utf8",
+        ),
+      ) as { pid: number };
+      expect(Number.isSafeInteger(captured.pid)).toBe(true);
+      expect(captured.pid).toBeGreaterThan(0);
+      expect(result.outcome).toBe("failed");
+      expect(result.reason).toBe("Local review did not complete (timeout)");
+      expect(result.report).toBeUndefined();
+      expect(result.usage).toEqual({
+        inputTokens: 12,
+        outputTokens: 7,
+        costUsd: 0.01,
+      });
+      let processError: string | undefined;
+      try {
+        process.kill(captured.pid, 0);
+      } catch (error) {
+        processError = (error as NodeJS.ErrnoException).code;
+      }
+      expect(processError).toBe("ESRCH");
+      await expect(
+        access(join(root, "data", "worktrees", "review-7")),
+      ).rejects.toThrow();
+    },
+    20_000,
+  );
   it("aborts a running fixture reviewer and safely cleans the confirmed-stopped checkout", async () => {
     mode("hang");
     const controller = new AbortController();

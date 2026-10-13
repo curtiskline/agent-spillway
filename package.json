@@ -21,7 +21,8 @@
     "README.md",
     "eval",
     "profiles",
-    "scripts/harness-wire-smoke.mjs"
+    "scripts/harness-wire-smoke.mjs",
+    "scripts/plugin-footprint.mjs"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -31,7 +32,8 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "validate:community": "npm run build && node scripts/validate-community.mjs",
     "smoke:onboarding": "node scripts/onboarding-smoke.mjs",
-    "smoke:harness": "node scripts/harness-wire-smoke.mjs"
+    "smoke:harness": "node scripts/harness-wire-smoke.mjs",
+    "measure:plugin": "node scripts/plugin-footprint.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

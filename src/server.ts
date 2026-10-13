@@ -430,6 +430,12 @@ export async function startService(
       json(await drainEvidence());
       return;
     }
+    if (req.method === "GET" && path === "/api/v1/doctor") {
+      if (!equal(bearer, token))
+        throw new SpillwayError("UNAUTHORIZED", "Bearer authentication required for diagnostics.", 401);
+      json(await controller.doctor({ ...store.evidenceCounts(), lastError: evidenceStatus.lastError }));
+      return;
+    }
     if (req.method === "GET" && path === "/api/v1/endpoints") {
       json(await controller.endpointHealth());
       return;

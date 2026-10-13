@@ -12,6 +12,8 @@ import { lintTask } from "./task.js";
 import { parseReviewReport } from "./review.js";
 import { parseStrictJson } from "./json.js";
 import { formatReport, type Scorecard } from "./report.js";
+import { formatDoctorReport, type DoctorReport } from "./doctor.js";
+import { createPilot } from "./pilot.js";
 
 interface CliOptions {
   config?: string;
@@ -24,7 +26,7 @@ interface Output {
   err(text: string): void;
 }
 const usage =
-  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall\nreport [--json], audit list|show ID|submit ID --file PATH\nusage ID --file PATH, export --sanitized --repo URL [--profile-file PATH]\nqualify --profile ID [--metadata PATH], qualify list|show JOB-ID|reconcile JOB-ID --worker-stopped\naccept|reject ID [--owner-minutes N]";
+  "Agent Spillway (pre-alpha)\nUsage: spillway [--config PATH] [--data-dir PATH] COMMAND\nCommands: doctor [--json], pilot create DIR, serve, run --once, lint FILE, add FILE, list, show ID, inspect ID, reconcile ID --worker-stopped, accept ID, reject ID, status, dashboard, mcp, session-summary\nfrontier on|off [--reset-at ISO], frontier status, frontier claim ID, frontier complete ID --attempt N\nreview show ID, review submit ID --file PATH\nservice install [--no-start], service start|stop|status|uninstall\nreport [--json], audit list|show ID|submit ID --file PATH\nusage ID --file PATH, export --sanitized --repo URL [--profile-file PATH]\nqualify --profile ID [--metadata PATH], qualify list|show JOB-ID|reconcile JOB-ID --worker-stopped\naccept|reject ID [--owner-minutes N]";
 function parseArgs(argv: string[]): CliOptions {
   const positional: string[] = [];
   const options: { config?: string; dataDir?: string } = {};
@@ -114,6 +116,40 @@ export async function runCli(
         `Task is ready for admission.${result.warnings.length ? `\n${result.warnings.join("\n")}` : ""}`,
       );
       return 0;
+    }
+    if (command === "pilot") {
+      if (args.length !== 2 || args[0] !== "create")
+        throw new SpillwayError("usage", "Use pilot create DIR.");
+      output.out(JSON.stringify(await createPilot(resolve(args[1]!)), null, 2));
+      return 0;
+    }
+    if (command === "doctor") {
+      if (args.length > 1 || (args.length === 1 && args[0] !== "--json"))
+        throw new SpillwayError("usage", "Use doctor [--json].");
+      let report: DoctorReport;
+      try {
+        const client = await clientFor(options);
+        report = z.object({
+          version: z.literal(1),
+          serviceVersion: z.literal(VERSION),
+          ok: z.boolean(),
+          checks: z.array(z.object({
+            id: z.enum(["service", "execution", "recovery", "evidence", "harness", "catalog", "qualification"]),
+            status: z.enum(["pass", "warning", "fail"]),
+            message: z.string().min(1).max(500),
+          }).strict()).min(1).max(100),
+        }).strict().refine(value => value.ok === !value.checks.some(check => check.status === "fail"))
+          .parse(await client.request("GET", "/api/v1/doctor"));
+      } catch {
+        report = {
+          version: 1,
+          serviceVersion: VERSION,
+          ok: false,
+          checks: [{ id: "service", status: "fail", message: "Service unavailable or incompatible. Check private configuration and run spillway service status." }],
+        };
+      }
+      output.out(args[0] === "--json" ? JSON.stringify(report, null, 2) : formatDoctorReport(report));
+      return report.ok ? 0 : 1;
     }
     if (command === "service") {
       if (options.dataDir)

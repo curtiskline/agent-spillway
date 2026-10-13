@@ -33,6 +33,8 @@ import { verifyAttempt } from "./verify.js";
 import { REVIEW_RUBRIC, parseReviewReport, runLocalReview } from "./review.js";
 import { parseStrictJson } from "./json.js";
 import type { QualificationResult } from "./qualification.js";
+import { buildDoctorReport } from "./doctor.js";
+import type { EvidenceStatus } from "./contracts.js";
 
 const sensitive =
   /(^|\/)(\.github|\.gitlab|migrations?|auth|authentication|authorization|permissions?|secrets?)(\/|$)|(^|\/)(package\.json|[^/]*lock[^/]*|Cargo\.toml|go\.mod|pyproject\.toml|requirements[^/]*\.txt|Dockerfile)$/i;
@@ -1296,6 +1298,15 @@ export class Controller {
         );
       this.requireFrontier(this.getDetail(packet.taskId).task);
       return this.store.finishAudit(id, report, meta);
+    });
+  }
+  async doctor(evidence: EvidenceStatus) {
+    return buildDoctorReport({
+      config: this.config,
+      adapter: this.adapter,
+      busy: this.isBusy() || this.activeExecution(),
+      uncertain: this.hasUncertainty(),
+      evidence,
     });
   }
   async endpointHealth() {

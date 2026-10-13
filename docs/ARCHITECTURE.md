@@ -154,3 +154,7 @@ The isolated-home source/package smoke packs and installs build artifacts with l
 Explicit evidence synchronization and shutdown capture the committed row-count watermark before joining any ongoing writer, then drain through that finite prefix (or return a visible delivery error). Joining a writer that started before a new owner decision must not report that decision synchronized prematurely. Later concurrent commits may remain pending; the operation does not chase an unbounded moving target.
 
 Shutdown rejects new admissions and tracks HTTP route promises independently of sockets. A disconnected handler may still own asynchronous reads or a queue commit; every handler must settle before the final evidence drain and SQLite closure. Concurrent close callers await the same shutdown promise rather than resolving before completion.
+
+## Phase 3 onboarding follow-up
+
+PR #3 merged at main 323ae92; the owner authorized continued work on 2026-10-13. Service-owned diagnostics report bounded local catalog/harness and operational readiness without inference or policy changes. A bundled original Apache-2.0 pilot creator materializes a new disposable repository and private pinned tasks outside existing Git checkouts, without banking or acceptance. CLI remains thin; diagnostics cannot certify model capability. See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md) for frozen ownership and verification.

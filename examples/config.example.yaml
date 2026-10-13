@@ -18,7 +18,7 @@ profiles:
     model_artifact: your-exact-artifact-hash-or-revision
     harness: opencode
     harness_version: your-exact-opencode-version
-    qualified_classes: [mechanical]
+    qualified_classes: [] # Startup/qualification only; task grants require real evidence.
 default_profile: sample
 allow_checks_only: false # Explicitly enable only for a trusted experimental sample.
 port: 7433

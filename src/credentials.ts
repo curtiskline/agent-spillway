@@ -45,19 +45,23 @@ export async function validateCredentialFile(input: string): Promise<string> {
       (rel !== ".." && !rel.startsWith("../") && !isAbsolute(rel))
     )
       throw denied();
-    let gitRepo = false;
     try {
       await execute(
         "git",
-        ["-C", dirname(canonical), "rev-parse", "--show-toplevel"],
-        { env: { PATH: process.env.PATH }, timeout: 5000 },
+        ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+          "-C", dirname(canonical), "rev-parse", "--absolute-git-dir"],
+        { env: { PATH: process.env.PATH, LC_ALL: "C", GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0", GIT_DISCOVERY_ACROSS_FILESYSTEM: "1" },
+          timeout: 5000, maxBuffer: 65536 },
       );
-      gitRepo = true;
-    } catch {
-      /*outsideGit*/
+    } catch (cause) {
+      const failure = cause as { code?: unknown; killed?: unknown; stderr?: unknown };
+      if (failure.code === 128 && !failure.killed &&
+        typeof failure.stderr === "string" &&
+        failure.stderr.startsWith("fatal: not a git repository")) return canonical;
+      throw denied();
     }
-    if (gitRepo) throw denied();
-    return canonical;
+    throw denied();
   } catch {
     throw denied();
   }

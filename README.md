@@ -20,13 +20,27 @@ Install [gitleaks](https://github.com/gitleaks/gitleaks#installing) before commi
 
 ## Private configuration and endpoint setup
 
+For a fresh configuration, copy [the initializer input template](examples/init-input.example.json) into a new private directory outside every Git checkout. Replace its repository, local endpoint, exact model/artifact and harness version with your own values; credential references are optional, and literal keys are rejected. The input must be an owner-only file (0600) with an owner-only immediate parent (0700). Create the disposable pilot first if you use the template's repository path.
+
+```sh
+mkdir -p ~/.config
+mkdir -m 700 ~/.config/spillway-input
+cp examples/init-input.example.json ~/.config/spillway-input/input.json
+chmod 600 ~/.config/spillway-input/input.json
+# Edit the private input with your exact bindings before initialization.
+spillway init --from ~/.config/spillway-input/input.json --directory ~/.config/spillway-first
+spillway --config ~/.config/spillway-first/config.yaml serve
+```
+
+`init` validates local bindings and creates only the new private `config.yaml` and `data/`. It returns their paths, refuses existing destinations, and does not contact a model, start a service, grant task classes or modify existing config. The destination parent must already exist, be owned by you, be canonical and not writable by other users. Failed creation preserves its partial new directory for inspection; use a fresh destination after resolving the failure. Use the printed `--config` path for later commands. A profile with `qualified_classes: []` supports startup diagnostics and explicit qualification, while local task admission remains disabled. Populate class permissions only as an explicit operator assertion backed by real evidence; passing the tool workload never grants coding classes automatically.
+
 Copy [the example config](examples/config.example.yaml) to `~/.config/spillway/config.yaml`, outside this and target repositories. Protect config directories with mode 0700 and files with mode 0600. Register the absolute path of a **disposable repository** and its data policy; the default is local-only. Keep runtime data outside source checkouts (default `~/.spillway`).
 
 Install OpenCode separately and record the exact `opencode --version` in the private profile. Replace the example endpoint, exact model catalog ID and artifact identity with your own values. The endpoint must expose an OpenAI-compatible `/v1/models` catalog containing that model. Provider keys use an `api_key_env` reference for foreground operation or an `api_key_file` reference for a private owner-only regular file outside Git; these references are mutually exclusive. Never put a literal key in config or daemon definitions. Per-user services clear inherited provider credentials, so use the file reference when a configured endpoint needs authentication in the background. Profile `qualified_classes` is an explicit private operator assertion: do not populate it from fixture results. OpenCode was selected after a real toy-task comparison with Aider. Qualify your own endpoint/model/context before relying on broader task classes. No configured real endpoint is required to run the test suite.
 
 Config can set `review_profile` to an approved local/open-weight profile and a version-1 `policy` for all task classes, maximum repairs and review timeout. Repository data policy is rechecked for reviews and frontier work; `frontier-ok` is required before code is supplied to an owner frontier session. Risky work always requires frontier review, and design work remains planner work. See [Phase 2 contracts](docs/PHASE2.md).
 
-Create the purpose-built disposable sample with `node scripts/create-sample.mjs ~/spillway-sample`. It prints the repository and task paths, and refuses to replace an existing repository. Its protected acceptance check fails on the baseline. Register the printed repository path in private config. For this narrow experiment, explicitly enable `allow_checks_only: true`; the example defaults to false. After a real endpoint is configured, bank the generated `~/spillway-sample/hello.md` using the workflow below.
+Create the purpose-built disposable sample with `node scripts/create-sample.mjs ~/spillway-sample`. It prints the repository and task paths, and refuses to replace an existing repository. Its protected acceptance check fails on the baseline. Register the printed repository path in private config. For this narrow experiment, explicitly permit the mechanical class after reviewing real endpoint evidence and enable `allow_checks_only: true`; the example starts with empty class grants and checks-only disabled. After a real endpoint is configured, bank the generated `~/spillway-sample/hello.md` using the workflow below.
 
 Foreground workflow, in two terminals:
 

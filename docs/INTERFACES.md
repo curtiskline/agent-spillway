@@ -204,3 +204,7 @@ The frozen additive contracts are in [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md
 ## Phase 3 evaluation follow-up
 
 [PHASE3_EVALUATION.md](PHASE3_EVALUATION.md) defines additive taskSpecs scorecard buckets, closed nullable taskSpec export measurements, shared qualification requirement checklists and the strict diagnostics response. GET `/api/v1/qualifications/:id/diagnostics` requires bearer authentication even via dashboard aliases. `qualify explain JOB-ID [--json]` inspects saved evidence with no mutations/inference. Existing result version/suite semantics, public permission gates and five MCP tools remain unchanged.
+
+## Private configuration bootstrap
+
+Profile qualified_classes may be empty; no task grant is implied. planConfig(input,overrides?) validates prospective configuration without filesystem mutations; validateConfig retains existing preparation. Standalone init --from INPUT --directory NEW_ROOT returns the closed InitReceipt and creates only a new private root/config/data. Exact input, privacy/refusal, dependencies and ownership are frozen in [PHASE3_CONFIGURATION.md](PHASE3_CONFIGURATION.md).

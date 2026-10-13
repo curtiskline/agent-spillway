@@ -173,3 +173,7 @@ flowchart LR
   Checklist --> View[Authenticated CLI / read-only dashboard]
   Withheld --> View
 ```
+
+## Private configuration bootstrap
+
+Owner-authorized PR #5 continuation adds an exclusive standalone starter-config creator. [PHASE3_CONFIGURATION.md](PHASE3_CONFIGURATION.md) freezes the contracts. Separate read-only planning from existing data preparation; allow empty class grants for startup and explicit qualification while existing task gates deny every absent grant. New config defaults local-only/checks-only off/no publication; no credentials or qualifications inferred and existing services/config remain unchanged.

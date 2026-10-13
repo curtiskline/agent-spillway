@@ -78,7 +78,7 @@ try {
       /(?:service\.json|queue\.sqlite|config\.yaml|\.env)$/.test(file.path),
     ),
   );
-  for (const path of ["eval/tasks/v1/manifest.json", "eval/tasks/v1/checks/greeting.cjs", "dist/doctor.js", "dist/pilot.js", "dist/task-features.js", "dist/qualification-diagnostics.js", "scripts/plugin-footprint.mjs"]) {
+  for (const path of ["eval/tasks/v1/manifest.json", "eval/tasks/v1/checks/greeting.cjs", "dist/doctor.js", "dist/pilot.js", "dist/task-features.js", "dist/qualification-diagnostics.js", "dist/init.js", "examples/init-input.example.json", "scripts/plugin-footprint.mjs"]) {
     assert.ok(packed[0].files.some(file => file.path === path));
   }
   stage = "install";
@@ -288,6 +288,29 @@ try {
         };
       },
     };
+    stage = `${label}-private-init`;
+    const initInput = join(home, `${label}-init-input.json`);
+    await writeFile(initInput, JSON.stringify({ version: 1, repo,
+      endpoint: { url: `http://127.0.0.1:${catalogAddress.port}/v1` },
+      model: "fixture-model", model_artifact: "fixture-only", harness_version: "fixture-v1" }), { mode: 0o600 });
+    const initialized = JSON.parse((await command(process.execPath,
+      [entry, "init", "--from", initInput, "--directory", join(root, `${label}-bootstrap`)], home)).stdout);
+    assert.deepEqual(initialized.qualifiedClasses, []);
+    const { loadConfig } = await import(pathToFileURL(join(directory, "dist/config.js")).href);
+    const starterConfig = await loadConfig(initialized.configPath);
+    assert.deepEqual(starterConfig.profiles[0].qualified_classes, []);
+    assert.equal(starterConfig.allow_checks_only, false);
+    assert.equal(starterConfig.repositories[0].data_policy, "local-only");
+    assert.equal(starterConfig.repositories[0].publication, undefined);
+    const bootstrap = await startService({ ...starterConfig, port: 0 }, { once: true, adapter });
+    services.push(bootstrap);
+    const starterDoctor = JSON.parse((await command(process.execPath,
+      [entry, "--config", initialized.configPath, "doctor", "--json"], home)).stdout);
+    assert.equal(starterDoctor.ok, true);
+    await assert.rejects(bootstrap.controller.addTask(`---\nid: disabled-bootstrap-task\nrepo: ${JSON.stringify(repo)}\nbase: main\nclass: mechanical\nscope: [src/message.cjs]\nprotected: [checks/**]\ncontext: [src/message.cjs]\nchecks: [node checks/acceptance.cjs]\nreview: default\n---\n\n## Objective\nReturn hello.\n\n## Acceptance criteria\nProtected check passes.\n`), error => error.code === "UNQUALIFIED_CLASS");
+    assert.deepEqual(bootstrap.store.listTasks(), []);
+    await bootstrap.close();
+    stage = `${label}-fixture`;
     const config = {
       version: 1,
       data_dir: dataDir,

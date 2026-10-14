@@ -2,11 +2,12 @@
 // Optional installed-harness check. All completions come from a loopback fixture;
 // this verifies adapter wiring, never model capability or provider inference.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { chmod, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OpenCodeAdapter } from "../dist/harness.js";
+import { OpenCodeAdapter, WORKER_SYSTEM_PROMPT } from "../dist/harness.js";
 
 const root = await realpath(await mkdtemp(join(tmpdir(), "spillway-wire-")));
 await chmod(root, 0o700);
@@ -51,7 +52,10 @@ async function handleRequest(request, response) {
     response.writeHead(400).end();
     return;
   }
-  requests.push({ path: request.url, model: body.model, temperature: body.temperature, tools: body.tools.map((tool) => tool.function.name) });
+  const schemas = body.tools.map((tool) => ({ name: tool.function.name, parameters: tool.function.parameters })).sort((a, b) => a.name.localeCompare(b.name));
+  requests.push({ path: request.url, model: body.model, temperature: body.temperature,
+    tools: body.tools.map((tool) => tool.function.name), schemasHash: createHash("sha256").update(JSON.stringify(schemas)).digest("hex"),
+    system: body.messages?.filter((message) => message.role === "system").map((message) => message.content).join("\n") });
   active++;
   try {
     peak = Math.max(peak, active);
@@ -99,13 +103,21 @@ try {
     assert.equal(result.exit, "completed", "Installed harness must complete the fixture");
     assert.equal(requests.length, 1, "Auxiliary completions must be disabled");
     assert.equal(peak, 1, "Only the primary completion may be active");
-    const { tools, ...observed } = requests[0];
+    const { tools, schemasHash, system, ...observed } = requests[0];
     assert.deepEqual(observed, { path: "/v1/chat/completions", model, temperature: 0 });
     assert.ok(tools.includes("read"), "Expected primary tools must be available");
-    if (mode === "worker") assert.ok(!tools.some((tool) => ["task", "skill", "batch", "question", "plan_enter", "plan_exit"].includes(tool)), "Delegation tools must be absent");
-    else assert.ok(tools.every((tool) => ["read", "glob", "grep"].includes(tool)), "Reviewer tools must be read-only");
+    if (mode === "worker") {
+      assert.ok(system.includes(WORKER_SYSTEM_PROMPT), "The complete worker contract must reach the primary model");
+      assert.ok(!system.includes("You are opencode, an interactive CLI tool"), "The worker contract must replace generic coding instructions");
+      assert.ok(!tools.some((tool) => ["task", "skill", "batch", "question", "plan_enter", "plan_exit"].includes(tool)), "Delegation tools must be absent");
+      assert.ok(["bash", "read", "glob", "grep", "edit", "write"].every((tool) => tools.includes(tool)), "Worker execution tools must remain available");
+    } else {
+      assert.ok(system.includes("Independently review the pinned result. Never modify files or run commands."), "The separate reviewer prompt must reach the model");
+      assert.ok(!system.includes(WORKER_SYSTEM_PROMPT), "Worker instructions must not reach the reviewer");
+      assert.ok(tools.every((tool) => ["read", "glob", "grep"].includes(tool)), "Reviewer tools must be read-only");
+    }
     if (mode === "review") assert.equal(result.summary, JSON.stringify({ resultSha: "a".repeat(40), verdict: "accept", findings: [] }));
-    process.stdout.write(`OpenCode ${version} ${mode}: one fixture request, temperature 0, completed.\n`);
+    process.stdout.write(`OpenCode ${version} ${mode}: one fixture request, temperature 0, completed; tool schemas ${schemasHash}.\n`);
   }
 } finally {
   server.closeAllConnections();

@@ -43,6 +43,8 @@ TypeScript ESM on Node >=22.13, with built-in `node:sqlite` (experimental on old
 
 OpenCode is externally installed and version checked. The initial adapter was chosen after a real LM Studio toy-task comparison with Aider ([spike](spikes/real-harness.md)). Those toy results do not establish broader model qualification. Profiles bind exact model/artifact, endpoint, harness version and qualified classes; no automatic provider/model fallback. Health checks require the exact model in the configured OpenAI-compatible catalog. Unhealthy endpoints leave work pending and consume no attempt.
 
+The primary build agent uses a concise general worker contract through OpenCode's existing `agent.build.prompt`. It replaces generic coding instructions while retaining task/environment injection and existing tools/permissions. Owner-supplied commands run verbatim with genuine exit status; explicitly required full reads must deliver complete context. There are no benchmark answers or grading predicates in the contract. Reviewer instructions and all qualification criteria stay unchanged. [ADR 0015](decisions/0015-bounded-worker-contract-prompt.md) bounds the actual-wire verification and one complete real comparison.
+
 Local workers/reviewers may use a configured local endpoint or explicitly approved hosted open-weight endpoint, subject to the repository's data policy. Automatic frontier endpoint calls are disabled. Frontier work occurs only through an authorized Claude Code session exchanging packets with the local service; provenance is owner-attested, not proof of vendor/model identity.
 
 ## Private storage and migrations

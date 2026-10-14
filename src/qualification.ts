@@ -1101,7 +1101,7 @@ export async function runQualification(
         profile: input.profile,
         timeoutSec: assets.manifest.timeoutSeconds,
         logPath,
-        purpose: "worker",
+        purpose: "qualification",
         temperature: 0,
         ...(input.signal ? { signal: input.signal } : {}),
       });

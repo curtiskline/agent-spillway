@@ -29,6 +29,7 @@ import { Store } from "../src/store.js";
 import type {
   EndpointProfile,
   HarnessAdapter,
+  HarnessInput,
   ModelProfile,
 } from "../src/contracts.js";
 
@@ -176,6 +177,12 @@ describe("fixed qualification workload through real Git and a fixture subprocess
   let endpoint: EndpointProfile;
   let profile: ModelProfile;
   let calls: number;
+  let dispatches: Array<{
+    capability: string;
+    purpose: HarnessInput["purpose"];
+    temperature: HarnessInput["temperature"];
+    timeoutSec: number;
+  }>;
   let catalog: ReturnType<typeof createServer>;
   let adapter: HarnessAdapter;
   beforeEach(async () => {
@@ -184,6 +191,7 @@ describe("fixed qualification workload through real Git and a fixture subprocess
     );
     await chmod(root, 0o700);
     calls = 0;
+    dispatches = [];
     const executable = join(root, "fixture.cjs");
     await writeFile(executable, fixtureProgram);
     catalog = createServer((_request, response) => {
@@ -213,12 +221,19 @@ describe("fixed qualification workload through real Git and a fixture subprocess
         return "1.2.3";
       },
       async run(input) {
+        expect(input.purpose).toBe("qualification");
         expect(input.temperature).toBe(0);
         expect(input.timeoutSec).toBe(180);
         expect(input.prompt).toContain("qualification workload v3, case ");
         calls++;
         const scenario = /case ([a-z-]+)\./.exec(input.prompt)?.[1];
         if (!scenario) throw new Error("Unexpected arbitrary prompt");
+        dispatches.push({
+          capability: scenario,
+          purpose: input.purpose,
+          temperature: input.temperature,
+          timeoutSec: input.timeoutSec,
+        });
         if (scenario === "discovery")
           expect(input.prompt).toContain(
             "using the glob tool with the exact pattern docs/**",
@@ -257,6 +272,14 @@ describe("fixed qualification workload through real Git and a fixture subprocess
       provenance: "fixture",
     });
     expect(calls).toBe(7);
+    expect(dispatches).toEqual(
+      CAPABILITIES.map((capability) => ({
+        capability,
+        purpose: "qualification",
+        temperature: 0,
+        timeoutSec: 180,
+      })),
+    );
     expect(result.version).toBe(1);
     expect(result.suiteVersion).toBe(3);
     expect(result.workloadHash).toBe(await qualificationWorkloadHash());

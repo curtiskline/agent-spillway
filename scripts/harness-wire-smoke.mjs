@@ -12,7 +12,10 @@ import { OpenCodeAdapter, WORKER_SYSTEM_PROMPT } from "../dist/harness.js";
 const root = await realpath(await mkdtemp(join(tmpdir(), "spillway-wire-")));
 await chmod(root, 0o700);
 const adapter = new OpenCodeAdapter(process.argv[2] ?? "opencode");
-const model = "spillway-wire-fixture";
+const model = process.argv[3] ?? "spillway-wire-fixture";
+assert.ok(model.length > 0 && model.length <= 256, "A bounded fixture model identifier is required");
+const canonicalTools = new Set(["bash", "read", "glob", "grep", "edit", "write", "apply_patch"]);
+let workerSchemas;
 let active = 0;
 let peak = 0;
 let mode = "worker";
@@ -54,7 +57,7 @@ async function handleRequest(request, response) {
   }
   const schemas = body.tools.map((tool) => ({ name: tool.function.name, parameters: tool.function.parameters })).sort((a, b) => a.name.localeCompare(b.name));
   requests.push({ path: request.url, model: body.model, temperature: body.temperature,
-    tools: body.tools.map((tool) => tool.function.name), schemasHash: createHash("sha256").update(JSON.stringify(schemas)).digest("hex"),
+    tools: body.tools.map((tool) => tool.function.name), schemas, schemasHash: createHash("sha256").update(JSON.stringify(schemas)).digest("hex"),
     system: body.messages?.filter((message) => message.role === "system").map((message) => message.content).join("\n") });
   active++;
   try {
@@ -82,7 +85,7 @@ try {
   const version = await adapter.version();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
-  for (mode of ["worker", "review"]) {
+  for (mode of ["worker", "review", "qualification"]) {
     requests = [];
     peak = 0;
     const worktree = join(root, mode, "repo");
@@ -103,21 +106,28 @@ try {
     assert.equal(result.exit, "completed", "Installed harness must complete the fixture");
     assert.equal(requests.length, 1, "Auxiliary completions must be disabled");
     assert.equal(peak, 1, "Only the primary completion may be active");
-    const { tools, schemasHash, system, ...observed } = requests[0];
+    const { tools, schemas, schemasHash, system, ...observed } = requests[0];
     assert.deepEqual(observed, { path: "/v1/chat/completions", model, temperature: 0 });
     assert.ok(tools.includes("read"), "Expected primary tools must be available");
-    if (mode === "worker") {
+    if (mode !== "review") {
       assert.ok(system.includes(WORKER_SYSTEM_PROMPT), "The complete worker contract must reach the primary model");
       assert.ok(!system.includes("You are opencode, an interactive CLI tool"), "The worker contract must replace generic coding instructions");
       assert.ok(!tools.some((tool) => ["task", "skill", "batch", "question", "plan_enter", "plan_exit"].includes(tool)), "Delegation tools must be absent");
-      assert.ok(["bash", "read", "glob", "grep", "edit", "write"].every((tool) => tools.includes(tool)), "Worker execution tools must remain available");
+      assert.ok(["bash", "read", "glob", "grep"].every((tool) => tools.includes(tool)), "Core execution tools must remain available");
+      assert.ok(tools.includes("apply_patch") || ["edit", "write"].every((tool) => tools.includes(tool)), "Model-appropriate mutation tools must remain available");
+      if (mode === "worker") workerSchemas = schemas;
+      else {
+        assert.ok(workerSchemas, "Ordinary-worker baseline must be captured first");
+        assert.ok(tools.every((tool) => canonicalTools.has(tool)), "Qualification must expose only measured primitives");
+        assert.deepEqual(schemas, workerSchemas.filter((tool) => canonicalTools.has(tool.name)), "Qualification must retain every model-appropriate core tool schema unchanged");
+      }
     } else {
       assert.ok(system.includes("Independently review the pinned result. Never modify files or run commands."), "The separate reviewer prompt must reach the model");
       assert.ok(!system.includes(WORKER_SYSTEM_PROMPT), "Worker instructions must not reach the reviewer");
       assert.ok(tools.every((tool) => ["read", "glob", "grep"].includes(tool)), "Reviewer tools must be read-only");
     }
     if (mode === "review") assert.equal(result.summary, JSON.stringify({ resultSha: "a".repeat(40), verdict: "accept", findings: [] }));
-    process.stdout.write(`OpenCode ${version} ${mode}: one fixture request, temperature 0, completed; tool schemas ${schemasHash}.\n`);
+    process.stdout.write(`OpenCode ${version} ${mode}: one fixture request, temperature 0, completed; tool schemas ${schemasHash}; tools ${[...tools].sort().join(",")}.\n`);
   }
 } finally {
   server.closeAllConnections();

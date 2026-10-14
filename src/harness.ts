@@ -147,7 +147,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
       );
     if (key) env.SPILLWAY_ENDPOINT_KEY = key;
     const model = `spillway/${input.profile.model}`;
-    const reviewing = input.purpose === "review";
+    const purpose = input.purpose ?? "worker";
+    const reviewing = purpose === "review";
     const agent = reviewing ? "spillway-review" : "build";
     const temperature = input.temperature ?? 0;
     const reviewPermission = {
@@ -177,6 +178,21 @@ export class OpenCodeAdapter implements HarnessAdapter {
       plan_exit: "deny",
       batch: "deny",
     };
+    const qualificationPermission = {
+      "*": "deny",
+      bash: "allow",
+      read: "allow",
+      glob: "allow",
+      grep: "allow",
+      edit: "allow",
+      write: "allow",
+      apply_patch: "allow",
+    };
+    const permission = reviewing
+      ? reviewPermission
+      : purpose === "qualification"
+        ? qualificationPermission
+        : workerPermission;
     // OpenCode 1.19.0 forks title generation alongside the first worker round.
     // Disable auxiliary agents at their source, rather than sharing our slot
     // with hidden requests to the same endpoint. Overflow must fail closed.
@@ -203,7 +219,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
       mcp: {},
       lsp: false,
       formatter: false,
-      permission: reviewing ? reviewPermission : workerPermission,
+      permission,
       agent: {
         ...disabledAgents,
         ...(reviewing
@@ -225,7 +241,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
                 model,
                 temperature,
                 prompt: WORKER_SYSTEM_PROMPT,
-                permission: workerPermission,
+                permission,
               },
             }),
       },
@@ -263,6 +279,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         artifact: input.profile.model_artifact,
         harness: this.id,
         version: input.profile.harness_version,
+        purpose,
         agent,
         temperature,
       }),

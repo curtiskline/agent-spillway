@@ -65,3 +65,5 @@ ADR [0013](decisions/0013-linux-service-verification.md) records real systemd li
 ADR [0014](decisions/0014-marketplace-installation-verification.md) separates actual administrative marketplace lifecycle verification from model/session/owner evidence.
 
 ADR [0015](decisions/0015-bounded-worker-contract-prompt.md) replaces generic primary coding instructions with a general owner-task contract and requires actual-wire verification and one complete unchanged qualification comparison. Historical failures and owner/release gates remain intact.
+
+ADR [0016](decisions/0016-qualification-tool-contract.md) binds the internal qualification purpose to the unchanged observer's primitives while preserving ordinary workers, reviewers, all historical grades and class/publication gates.

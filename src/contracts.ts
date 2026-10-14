@@ -197,7 +197,7 @@ export interface HarnessInput {
   timeoutSec: number;
   logPath: string;
   signal?: AbortSignal;
-  purpose?: "worker" | "review";
+  purpose?: "worker" | "review" | "qualification";
   temperature?: number;
 }
 export interface HarnessResult {
